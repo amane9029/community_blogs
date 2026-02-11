@@ -1,0 +1,37 @@
+{
+    "questions": [
+        {
+            "id": 1,
+            "title": "How to prepare for software engineering interviews?",
+            "content": "I'm a final year student looking for tips on cracking technical interviews at top companies...",
+            "author": "Kenji Tanaka",
+            "author_role": "student",
+            "answers": 5,
+            "views": 234,
+            "time": "2026-02-08T10:00:00Z",
+            "tags": ["career", "interviews"]
+        },
+        {
+            "id": 2,
+            "title": "Best resources to learn React in 2026?",
+            "content": "I want to learn React from scratch. What are the best courses or tutorials available?",
+            "author": "Sarah Chen",
+            "author_role": "student",
+            "answers": 8,
+            "views": 456,
+            "time": "2026-02-08T08:00:00Z",
+            "tags": ["react", "learning"]
+        },
+        {
+            "id": 3,
+            "title": "Career advice: Startup vs Big Tech?",
+            "content": "I have offers from both a startup and a big tech company. What should I consider?",
+            "author": "Michael Brown",
+            "author_role": "student",
+            "answers": 12,
+            "views": 678,
+            "time": "2026-02-07T15:00:00Z",
+            "tags": ["career", "advice"]
+        }
+    ]
+}
