@@ -11,6 +11,19 @@ let currentRegRole = '';       // 'student' | 'mentor'
 let studentFile = null;
 let mentorFile = null;
 
+function setButtonLoading(btn, isLoading, loadingText, idleText) {
+    if (!btn) return;
+    if (isLoading) {
+        btn.disabled = true;
+        btn.innerHTML = '<svg class="animate-spin h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path></svg>' + (loadingText || 'Processing...');
+        return;
+    }
+    btn.disabled = false;
+    if (idleText) {
+        btn.textContent = idleText;
+    }
+}
+
 // ------- Open / Close -------
 
 function openAuthModal() {
@@ -70,10 +83,19 @@ async function submitLogin() {
         errBox.classList.remove('hidden');
         return;
     }
+    if (!isValidEmail(email)) {
+        errText.textContent = 'Please enter a valid email address.';
+        errBox.classList.remove('hidden');
+        return;
+    }
+    if (password.length < 6) {
+        errText.textContent = 'Password must be at least 6 characters.';
+        errBox.classList.remove('hidden');
+        return;
+    }
 
     // Disable button while loading
-    btn.disabled = true;
-    btn.innerHTML = '<svg class="animate-spin h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path></svg> Signing in…';
+    setButtonLoading(btn, true, 'Signing in...');
 
     try {
         const res = await fetch(MODAL_AUTH_API, {
@@ -101,8 +123,7 @@ async function submitLogin() {
         errText.textContent = 'Network error. Please try again.';
         errBox.classList.remove('hidden');
     } finally {
-        btn.disabled = false;
-        btn.innerHTML = 'Sign In';
+        setButtonLoading(btn, false, '', 'Sign In');
     }
 }
 
@@ -407,6 +428,9 @@ async function submitStudentRegistration() {
     formData.append('password', password);
     formData.append('id_file', studentFile);
 
+    const submitBtn = document.querySelector('#studentStep2Form button[type="submit"]');
+    setButtonLoading(submitBtn, true, 'Submitting...');
+
     try {
         const res = await fetch(MODAL_REGISTER_API, {
             method: 'POST',
@@ -420,6 +444,8 @@ async function submitStudentRegistration() {
         showRegStep('success');
     } catch (_) {
         showFieldError('stu-file-err', 'Network error. Please try again.');
+    } finally {
+        setButtonLoading(submitBtn, false, '', 'Submit Registration');
     }
 }
 
@@ -441,6 +467,9 @@ async function submitMentorRegistration() {
     formData.append('password', password);
     formData.append('id_file', mentorFile);
 
+    const submitBtn = document.querySelector('#mentorStep2Form button[type="submit"]');
+    setButtonLoading(submitBtn, true, 'Submitting...');
+
     try {
         const res = await fetch(MODAL_REGISTER_API, {
             method: 'POST',
@@ -454,6 +483,8 @@ async function submitMentorRegistration() {
         showRegStep('success');
     } catch (_) {
         showFieldError('mnt-file-err', 'Network error. Please try again.');
+    } finally {
+        setButtonLoading(submitBtn, false, '', 'Submit Registration');
     }
 }
 

@@ -39,6 +39,8 @@ function content_map_blog($row)
         'likes' => 0,
         'status' => $row['status'] ?? 'published',
         'authorId' => isset($row['author_id']) ? (int) $row['author_id'] : null,
+        'approvedAt' => $row['approved_at'] ?? null,
+        'approvedBy' => isset($row['approved_by']) ? (int) $row['approved_by'] : null,
     ];
 }
 
@@ -51,6 +53,7 @@ function content_map_question($row)
     return [
         'id' => (int) ($row['id'] ?? 0),
         'title' => $row['title'] ?? '',
+        'authorId' => isset($row['author_id']) ? (int) $row['author_id'] : null,
         'author' => $authorName,
         'authorRole' => content_role_label($row['author_role'] ?? ''),
         'avatar' => strtoupper(substr($authorName, 0, 1)),
@@ -107,7 +110,7 @@ function content_map_announcement($row)
 }
 
 if ($action === 'bootstrap' || $action === 'public_data') {
-    $blogs = array_map('content_map_blog', repo_fetch_blogs(null));
+    $blogs = array_map('content_map_blog', repo_fetch_blogs('published'));
     $questions = array_map('content_map_question', repo_fetch_questions());
     $mentors = array_map('content_map_mentor', repo_fetch_mentors());
     $announcements = array_map('content_map_announcement', repo_fetch_announcements());
@@ -123,11 +126,29 @@ if ($action === 'bootstrap' || $action === 'public_data') {
     if (isLoggedIn()) {
         $user = getCurrentUser();
         if (in_array($user['role'], ['student', 'mentor'], true)) {
+            $response['my_blogs'] = array_map('content_map_blog', repo_fetch_blogs_by_author((int) $user['id']));
             $response['mentorship_requests'] = repo_fetch_mentorship_requests((int) $user['id'], $user['role']);
         }
     }
 
     api_json_response($response);
+}
+
+if ($action === 'search') {
+    $query = api_clean_text($input['query'] ?? '');
+    $queryLength = function_exists('mb_strlen') ? mb_strlen($query) : strlen($query);
+    if ($queryLength < 2) {
+        api_json_response(['success' => false, 'error' => 'Search query must be at least 2 characters.'], 400);
+    }
+
+    $results = repo_search_content($query, 8);
+    api_json_response([
+        'success' => true,
+        'query' => $query,
+        'blogs' => array_map('content_map_blog', $results['blogs'] ?? []),
+        'questions' => array_map('content_map_question', $results['questions'] ?? []),
+        'mentors' => array_map('content_map_mentor', $results['mentors'] ?? []),
+    ]);
 }
 
 if ($action === 'create_blog') {
@@ -148,6 +169,86 @@ if ($action === 'create_blog') {
     api_json_response(['success' => true, 'id' => $result['id']]);
 }
 
+if ($action === 'update_blog') {
+    $user = api_require_login();
+    $blogId = (int) ($input['blog_id'] ?? 0);
+    if ($blogId <= 0) {
+        api_json_response(['success' => false, 'error' => 'Invalid blog id.'], 400);
+    }
+
+    $existing = repo_fetch_blog_by_id($blogId);
+    if (!$existing) {
+        api_json_response(['success' => false, 'error' => 'Blog not found.'], 404);
+    }
+
+    $isAdmin = ($user['role'] ?? '') === 'admin';
+    $isOwner = (int) ($existing['author_id'] ?? 0) === (int) $user['id'];
+    if (!$isAdmin && !$isOwner) {
+        api_json_response(['success' => false, 'error' => 'Forbidden.'], 403);
+    }
+
+    $title = api_clean_text($input['title'] ?? $existing['title'] ?? '');
+    $content = api_clean_text($input['content'] ?? $existing['content'] ?? '');
+    $excerpt = api_clean_text($input['excerpt'] ?? $existing['excerpt'] ?? '');
+    $category = api_clean_text($input['category'] ?? $existing['category'] ?? '');
+    $status = null;
+    if (($input['status'] ?? null) !== null) {
+        $requestedStatus = api_clean_text($input['status']);
+        if (!in_array($requestedStatus, ['pending', 'published', 'rejected'], true)) {
+            api_json_response(['success' => false, 'error' => 'Invalid blog status.'], 400);
+        }
+        if ($isAdmin) {
+            $status = $requestedStatus;
+        } elseif ($requestedStatus === 'pending' && $isOwner) {
+            // Authors can only re-submit for review; they cannot self-publish.
+            $status = 'pending';
+        }
+    }
+
+    if ($title === '' || $content === '') {
+        api_json_response(['success' => false, 'error' => 'Title and content are required.'], 400);
+    }
+
+    $ok = repo_update_blog($blogId, $title, $content, $excerpt, $category, null);
+    if (!$ok && $status === null) {
+        api_json_response(['success' => false, 'error' => 'Failed to update blog.'], 400);
+    }
+
+    if ($status !== null) {
+        $statusUpdated = repo_update_blog_status($blogId, $status, $isAdmin ? (int) $user['id'] : null);
+        if (!$statusUpdated) {
+            api_json_response(['success' => false, 'error' => 'Failed to update blog status.'], 400);
+        }
+    }
+
+    api_json_response(['success' => true]);
+}
+
+if ($action === 'delete_blog') {
+    $user = api_require_login();
+    $blogId = (int) ($input['blog_id'] ?? 0);
+    if ($blogId <= 0) {
+        api_json_response(['success' => false, 'error' => 'Invalid blog id.'], 400);
+    }
+
+    $existing = repo_fetch_blog_by_id($blogId);
+    if (!$existing) {
+        api_json_response(['success' => false, 'error' => 'Blog not found.'], 404);
+    }
+
+    $isAdmin = ($user['role'] ?? '') === 'admin';
+    $isOwner = (int) ($existing['author_id'] ?? 0) === (int) $user['id'];
+    if (!$isAdmin && !$isOwner) {
+        api_json_response(['success' => false, 'error' => 'Forbidden.'], 403);
+    }
+
+    $ok = repo_delete_blog($blogId);
+    if (!$ok) {
+        api_json_response(['success' => false, 'error' => 'Failed to delete blog.'], 400);
+    }
+    api_json_response(['success' => true]);
+}
+
 if ($action === 'create_question') {
     $user = api_require_login();
     $title = api_clean_text($input['title'] ?? '');
@@ -164,6 +265,58 @@ if ($action === 'create_question') {
     api_json_response(['success' => true, 'id' => $result['id']]);
 }
 
+if ($action === 'update_question') {
+    $user = api_require_login();
+    $questionId = (int) ($input['question_id'] ?? 0);
+    $title = api_clean_text($input['title'] ?? '');
+    $content = api_clean_text($input['content'] ?? '');
+    if ($questionId <= 0 || $title === '' || $content === '') {
+        api_json_response(['success' => false, 'error' => 'Question title and content are required.'], 400);
+    }
+
+    $existing = repo_fetch_question_by_id($questionId);
+    if (!$existing) {
+        api_json_response(['success' => false, 'error' => 'Question not found.'], 404);
+    }
+
+    $isAdmin = ($user['role'] ?? '') === 'admin';
+    $isOwner = (int) ($existing['author_id'] ?? 0) === (int) $user['id'];
+    if (!$isAdmin && !$isOwner) {
+        api_json_response(['success' => false, 'error' => 'Forbidden.'], 403);
+    }
+
+    $ok = repo_update_question($questionId, $title, $content);
+    if (!$ok) {
+        api_json_response(['success' => false, 'error' => 'Failed to update question.'], 400);
+    }
+    api_json_response(['success' => true]);
+}
+
+if ($action === 'delete_question') {
+    $user = api_require_login();
+    $questionId = (int) ($input['question_id'] ?? 0);
+    if ($questionId <= 0) {
+        api_json_response(['success' => false, 'error' => 'Invalid question id.'], 400);
+    }
+
+    $existing = repo_fetch_question_by_id($questionId);
+    if (!$existing) {
+        api_json_response(['success' => false, 'error' => 'Question not found.'], 404);
+    }
+
+    $isAdmin = ($user['role'] ?? '') === 'admin';
+    $isOwner = (int) ($existing['author_id'] ?? 0) === (int) $user['id'];
+    if (!$isAdmin && !$isOwner) {
+        api_json_response(['success' => false, 'error' => 'Forbidden.'], 403);
+    }
+
+    $ok = repo_delete_question($questionId);
+    if (!$ok) {
+        api_json_response(['success' => false, 'error' => 'Failed to delete question.'], 400);
+    }
+    api_json_response(['success' => true]);
+}
+
 if ($action === 'create_answer') {
     $user = api_require_login();
     $questionId = (int) ($input['question_id'] ?? 0);
@@ -178,6 +331,26 @@ if ($action === 'create_answer') {
         api_json_response($result, 400);
     }
     api_json_response(['success' => true, 'id' => $result['id']]);
+}
+
+if ($action === 'update_mentorship_request_status') {
+    $user = api_require_login();
+    $requestId = (int) ($input['request_id'] ?? 0);
+    $status = api_clean_text($input['status'] ?? '');
+    if ($requestId <= 0 || !in_array($status, ['pending', 'approved', 'rejected', 'completed'], true)) {
+        api_json_response(['success' => false, 'error' => 'Invalid mentorship status payload.'], 400);
+    }
+
+    $isAdmin = ($user['role'] ?? '') === 'admin';
+    if (!$isAdmin && ($user['role'] ?? '') !== 'mentor') {
+        api_json_response(['success' => false, 'error' => 'Forbidden.'], 403);
+    }
+
+    $ok = repo_update_mentorship_request_status($requestId, $status, (int) $user['id'], $isAdmin);
+    if (!$ok) {
+        api_json_response(['success' => false, 'error' => 'Failed to update mentorship request.'], 400);
+    }
+    api_json_response(['success' => true]);
 }
 
 if ($action === 'create_mentorship_request') {
@@ -200,6 +373,67 @@ if ($action === 'mentorship_requests') {
     $role = $user['role'] ?? '';
     $requests = repo_fetch_mentorship_requests((int) $user['id'], $role);
     api_json_response(['success' => true, 'requests' => $requests]);
+}
+
+if ($action === 'update_profile') {
+    $user = api_require_login();
+    $name = api_clean_text($input['name'] ?? '');
+    $bio = api_clean_text($input['bio'] ?? '');
+    if ($name === '' || mb_strlen($name) < 2) {
+        api_json_response(['success' => false, 'error' => 'Name must be at least 2 characters.'], 400);
+    }
+
+    $ok = repo_update_user_profile((int) $user['id'], $name, $bio === '' ? null : $bio, $user['avatar'] ?? null);
+    if (!$ok) {
+        api_json_response(['success' => false, 'error' => 'Failed to update profile.'], 400);
+    }
+
+    $_SESSION['user']['name'] = $name;
+    api_json_response([
+        'success' => true,
+        'user' => [
+            'id' => (int) $user['id'],
+            'name' => $name,
+            'email' => $user['email'],
+            'role' => $user['role'],
+            'avatar' => $user['avatar'] ?? '',
+        ],
+    ]);
+}
+
+if ($action === 'change_password') {
+    $user = api_require_login();
+    $currentPassword = (string) ($input['current_password'] ?? '');
+    $newPassword = (string) ($input['new_password'] ?? '');
+    if ($currentPassword === '' || mb_strlen($newPassword) < 6) {
+        api_json_response(['success' => false, 'error' => 'Current password and a new password (min 6 chars) are required.'], 400);
+    }
+
+    $dbUser = repo_fetch_user_by_email((string) $user['email']);
+    if (!$dbUser || !password_verify($currentPassword, (string) ($dbUser['password'] ?? ''))) {
+        api_json_response(['success' => false, 'error' => 'Current password is incorrect.'], 400);
+    }
+
+    $ok = repo_update_user_password((int) $user['id'], password_hash($newPassword, PASSWORD_DEFAULT));
+    if (!$ok) {
+        api_json_response(['success' => false, 'error' => 'Failed to change password.'], 400);
+    }
+    api_json_response(['success' => true]);
+}
+
+if ($action === 'delete_account') {
+    $user = api_require_login();
+    if (($user['role'] ?? '') === 'admin') {
+        api_json_response(['success' => false, 'error' => 'Admin account deletion is not allowed from this action.'], 403);
+    }
+
+    $ok = repo_delete_user_account((int) $user['id']);
+    if (!$ok) {
+        api_json_response(['success' => false, 'error' => 'Failed to delete account.'], 400);
+    }
+
+    logout();
+    api_json_response(['success' => true, 'loggedOut' => true]);
 }
 
 api_json_response(['success' => false, 'error' => 'Unknown action.'], 400);

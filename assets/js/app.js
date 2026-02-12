@@ -4,6 +4,11 @@ const APP_BASE_PATH = (window.APP_BASE_PATH || '/community-blogs-php/').toString
 const BASE_PATH = APP_BASE_PATH.endsWith('/') ? APP_BASE_PATH : `${APP_BASE_PATH}/`;
 const AUTH_API = `${BASE_PATH}api/auth.php`;
 
+// Utility: escape a string for use in HTML attributes
+function escapeAttr(str) {
+    return String(str == null ? '' : str).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
 function getStoredUser() {
     const rawUser = localStorage.getItem('demo_user');
     if (!rawUser) {
@@ -109,6 +114,20 @@ const router = {
     render() {
         const path = this.currentPath;
 
+        const currentUser = this.user || null;
+        const studentNameEl = document.getElementById('student-name');
+        const mentorNameEl = document.getElementById('mentor-name');
+        const adminNameEl = document.getElementById('admin-name');
+        if (studentNameEl) {
+            studentNameEl.textContent = currentUser && currentUser.name ? currentUser.name : 'Student User';
+        }
+        if (mentorNameEl) {
+            mentorNameEl.textContent = currentUser && currentUser.name ? currentUser.name : 'Mentor User';
+        }
+        if (adminNameEl) {
+            adminNameEl.textContent = currentUser && currentUser.name ? currentUser.name : 'Admin User';
+        }
+
         // Update navigation active states
         document.querySelectorAll('.nav-link').forEach(link => {
             link.classList.remove('active');
@@ -174,6 +193,9 @@ const router = {
                 break;
             case '/mentors':
                 html = this.views.publicMentors();
+                break;
+            case '/announcements':
+                html = this.views.publicAnnouncements();
                 break;
             default:
                 if (path.startsWith('/blogs/')) {
@@ -289,6 +311,12 @@ const router = {
     views: {
         // Public Views
         publicHome() {
+            const announcements = Array.isArray(router.dbData && router.dbData.announcements) ? router.dbData.announcements : [];
+            const questions = this.getSampleQuestions().slice(0, 3);
+            const blogs = this.getSampleBlogs().slice(0, 2);
+            const mentors = this.getSampleMentors();
+            const totalAnswers = this.getSampleQuestions().reduce((sum, q) => sum + (Number(q.answers) || 0), 0);
+
             return `
                 <div class="space-y-12">
                     <!-- Hero Section -->
@@ -305,34 +333,38 @@ const router = {
                             <!-- Search Bar -->
                             <div class="max-w-2xl mx-auto relative mb-8">
                                 <input
+                                    id="home-search-input"
                                     type="text"
                                     placeholder="Search questions, blogs, or mentors..."
+                                    onkeydown="if(event.key === 'Enter'){ event.preventDefault(); runHomeSearch(event); }"
                                     class="w-full px-4 py-3 md:px-6 md:py-4 text-base md:text-lg border border-gray-300 rounded-full shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                                 />
-                                <button class="absolute right-2 top-2 p-2 bg-primary-600 text-white rounded-full hover:bg-primary-700 transition-colors">
+                                <button id="home-search-button" onclick="runHomeSearch(event)" class="absolute right-2 top-2 p-2 bg-primary-600 text-white rounded-full hover:bg-primary-700 transition-colors">
                                     <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <circle cx="11" cy="11" r="8"/>
                                         <path d="m21 21-4.35-4.35"/>
                                     </svg>
                                 </button>
                             </div>
+                            <p id="home-search-error" class="hidden text-sm text-red-600 mb-3"></p>
+                            <div id="home-search-results" class="hidden max-w-4xl mx-auto text-left"></div>
 
                             <!-- Stats -->
                             <div class="grid grid-cols-2 md:grid-cols-4 gap-6 max-w-3xl mx-auto">
                                 <div class="text-center">
-                                    <div class="text-3xl font-bold text-primary-600">2,500+</div>
+                                    <div class="text-3xl font-bold text-primary-600">${this.getSampleQuestions().length.toLocaleString()}</div>
                                     <div class="text-sm text-gray-600">Active Students</div>
                                 </div>
                                 <div class="text-center">
-                                    <div class="text-3xl font-bold text-primary-600">150+</div>
+                                    <div class="text-3xl font-bold text-primary-600">${mentors.length.toLocaleString()}</div>
                                     <div class="text-sm text-gray-600">Expert Mentors</div>
                                 </div>
                                 <div class="text-center">
-                                    <div class="text-3xl font-bold text-primary-600">500+</div>
+                                    <div class="text-3xl font-bold text-primary-600">${this.getSampleBlogs().length.toLocaleString()}</div>
                                     <div class="text-sm text-gray-600">Career Blogs</div>
                                 </div>
                                 <div class="text-center">
-                                    <div class="text-3xl font-bold text-primary-600">10,000+</div>
+                                    <div class="text-3xl font-bold text-primary-600">${totalAnswers.toLocaleString()}</div>
                                     <div class="text-sm text-gray-600">Questions Answered</div>
                                 </div>
                             </div>
@@ -349,25 +381,23 @@ const router = {
                                 </svg>
                                 Announcements
                             </h2>
-                            <a href="#" class="text-sm text-primary-600 hover:text-primary-700">View All</a>
+                            <a href="/announcements" onclick="event.preventDefault(); router.navigate('/announcements')" class="text-sm text-primary-600 hover:text-primary-700">View All</a>
                         </div>
                         <div class="space-y-4">
-                            <div class="border-l-4 border-primary-500 pl-4 py-2">
-                                <div class="flex items-center justify-between mb-1">
-                                    <h3 class="font-medium text-gray-900">Campus Placement Drive 2026 Registration Open</h3>
-                                    <span class="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-600">high</span>
+                            ${announcements.length ? announcements.slice(0, 2).map((announcement) => `
+                                <div class="border-l-4 border-primary-500 pl-4 py-2">
+                                    <div class="flex items-center justify-between mb-1">
+                                        <h3 class="font-medium text-gray-900">${announcement.title || 'Announcement'}</h3>
+                                        <span class="text-xs px-2 py-0.5 rounded-full bg-primary-100 text-primary-600">live</span>
+                                    </div>
+                                    <p class="text-sm text-gray-600 mb-1">${announcement.content || ''}</p>
+                                    <p class="text-xs text-gray-400">${announcement.date || announcement.created_at || ''}</p>
                                 </div>
-                                <p class="text-sm text-gray-600 mb-1">Registration for the upcoming placement season is now open. All final year students are required to complete their profiles.</p>
-                                <p class="text-xs text-gray-400">Jan 30, 2026</p>
-                            </div>
-                            <div class="border-l-4 border-primary-500 pl-4 py-2">
-                                <div class="flex items-center justify-between mb-1">
-                                    <h3 class="font-medium text-gray-900">New Mentorship Program Launch</h3>
-                                    <span class="text-xs px-2 py-0.5 rounded-full bg-warning-100 text-warning-600">medium</span>
+                            `).join('') : `
+                                <div class="border border-gray-200 rounded-lg p-4 text-sm text-gray-600">
+                                    No announcements available.
                                 </div>
-                                <p class="text-sm text-gray-600 mb-1">We are launching a new AI/ML focused mentorship program with industry experts. Applications open till Feb 15.</p>
-                                <p class="text-xs text-gray-400">Jan 28, 2026</p>
-                            </div>
+                            `}
                         </div>
                     </section>
 
@@ -436,86 +466,37 @@ const router = {
                         </div>
 
                         <div class="space-y-4">
-                            <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow">
-                                <div class="flex items-start justify-between">
-                                    <div class="flex-1">
-                                        <div class="flex items-center space-x-2 mb-2">
-                                            <h3 class="text-lg font-semibold text-gray-900 hover:text-primary-600 cursor-pointer">
-                                                How to prepare for FAANG interviews?
-                                            </h3>
-                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-success-100 text-success-600">
-                                                <svg class="h-3 w-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
-                                                </svg>
-                                                Verified Answer
-                                            </span>
-                                        </div>
-                                        <div class="flex items-center space-x-4 text-sm text-gray-500 mb-3">
-                                            <span>By Riku Suzuki</span>
-                                            <span>&bull;</span>
-                                            <span>12 answers</span>
-                                            <span>&bull;</span>
-                                            <span>234 views</span>
-                                        </div>
-                                        <div class="flex flex-wrap gap-2">
-                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">Interview Prep</span>
-                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">Tech Careers</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow">
-                                <div class="flex items-start justify-between">
-                                    <div class="flex-1">
-                                        <div class="flex items-center space-x-2 mb-2">
-                                            <h3 class="text-lg font-semibold text-gray-900 hover:text-primary-600 cursor-pointer">
-                                                Best resources for learning React in 2026?
-                                            </h3>
-                                        </div>
-                                        <div class="flex items-center space-x-4 text-sm text-gray-500 mb-3">
-                                            <span>By Hana Takahashi</span>
-                                            <span>&bull;</span>
-                                            <span>8 answers</span>
-                                            <span>&bull;</span>
-                                            <span>156 views</span>
-                                        </div>
-                                        <div class="flex flex-wrap gap-2">
-                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">Web Development</span>
-                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">React</span>
+                            ${questions.length ? questions.map((question) => `
+                                <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow">
+                                    <div class="flex items-start justify-between">
+                                        <div class="flex-1">
+                                            <div class="flex items-center space-x-2 mb-2">
+                                                <h3 class="text-lg font-semibold text-gray-900 hover:text-primary-600 cursor-pointer">
+                                                    ${question.title}
+                                                </h3>
+                                                ${question.verified ? `
+                                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-success-100 text-success-600">
+                                                        <svg class="h-3 w-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                                            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
+                                                        </svg>
+                                                        Verified Answer
+                                                    </span>
+                                                ` : ''}
+                                            </div>
+                                            <div class="flex items-center space-x-4 text-sm text-gray-500 mb-3">
+                                                <span>By ${question.author || 'Unknown'}</span>
+                                                <span>&bull;</span>
+                                                <span>${question.answers || 0} answers</span>
+                                                <span>&bull;</span>
+                                                <span>${question.views || 0} views</span>
+                                            </div>
+                                            <div class="flex flex-wrap gap-2">
+                                                ${(question.tags || ['General']).slice(0, 2).map((tag) => `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">${tag}</span>`).join('')}
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
-                            </div>
-
-                            <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow">
-                                <div class="flex items-start justify-between">
-                                    <div class="flex-1">
-                                        <div class="flex items-center space-x-2 mb-2">
-                                            <h3 class="text-lg font-semibold text-gray-900 hover:text-primary-600 cursor-pointer">
-                                                What skills are needed for Data Science roles?
-                                            </h3>
-                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-success-100 text-success-600">
-                                                <svg class="h-3 w-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
-                                                </svg>
-                                                Verified Answer
-                                            </span>
-                                        </div>
-                                        <div class="flex items-center space-x-4 text-sm text-gray-500 mb-3">
-                                            <span>By Ren Yamamoto</span>
-                                            <span>&bull;</span>
-                                            <span>15 answers</span>
-                                            <span>&bull;</span>
-                                            <span>312 views</span>
-                                        </div>
-                                        <div class="flex flex-wrap gap-2">
-                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">Data Science</span>
-                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">Career Path</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
+                            `).join('') : '<div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 text-sm text-gray-600">No questions available.</div>'}
                         </div>
                     </section>
 
@@ -532,61 +513,35 @@ const router = {
                         </div>
 
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden hover:shadow-lg transition-shadow">
-                                <div class="h-48 bg-gradient-to-br from-primary-100 to-primary-200 flex items-center justify-center">
-                                    <svg class="h-16 w-16 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
-                                        <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
-                                    </svg>
-                                </div>
-                                <div class="p-6">
-                                    <div class="flex items-center space-x-2 mb-3">
-                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary-100 text-primary-800">Career Guidance</span>
-                                        <span class="text-sm text-gray-500">8 min read</span>
+                            ${blogs.length ? blogs.map((blog) => `
+                                <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden hover:shadow-lg transition-shadow cursor-pointer" onclick="router.navigate('/blogs/${blog.id}')">
+                                    <div class="h-48 bg-gradient-to-br from-primary-100 to-primary-200 flex items-center justify-center">
+                                        <svg class="h-16 w-16 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+                                            <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+                                        </svg>
                                     </div>
-                                    <h3 class="text-lg font-semibold text-gray-900 mb-2 hover:text-primary-600 cursor-pointer">
-                                        My Journey from Campus to Google: A Complete Guide
-                                    </h3>
-                                    <p class="text-gray-600 text-sm mb-4 line-clamp-2">Sharing my complete journey from college campus placements to landing a role at Google. Includes tips on resume building, interview preparation, and more.</p>
-                                    <div class="flex items-center space-x-3">
-                                        <div class="h-8 w-8 rounded-full bg-gray-200 flex items-center justify-center">
-                                            <span class="text-sm font-medium text-gray-600">D</span>
+                                    <div class="p-6">
+                                        <div class="flex items-center space-x-2 mb-3">
+                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary-100 text-primary-800">${blog.category || 'General'}</span>
+                                            <span class="text-sm text-gray-500">${blog.readTime || ''}</span>
                                         </div>
-                                        <div>
-                                            <p class="text-sm font-medium text-gray-900">Dr. Sakura Sato</p>
-                                            <p class="text-xs text-gray-500">Senior Software Engineer @ Google</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden hover:shadow-lg transition-shadow">
-                                <div class="h-48 bg-gradient-to-br from-primary-100 to-primary-200 flex items-center justify-center">
-                                    <svg class="h-16 w-16 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
-                                        <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
-                                    </svg>
-                                </div>
-                                <div class="p-6">
-                                    <div class="flex items-center space-x-2 mb-3">
-                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary-100 text-primary-800">Tech Stacks</span>
-                                        <span class="text-sm text-gray-500">6 min read</span>
-                                    </div>
-                                    <h3 class="text-lg font-semibold text-gray-900 mb-2 hover:text-primary-600 cursor-pointer">
-                                        Top 10 Skills Every CS Student Should Master in 2026
-                                    </h3>
-                                    <p class="text-gray-600 text-sm mb-4 line-clamp-2">A comprehensive guide on the most in-demand technical skills for computer science graduates entering the job market in 2026.</p>
-                                    <div class="flex items-center space-x-3">
-                                        <div class="h-8 w-8 rounded-full bg-gray-200 flex items-center justify-center">
-                                            <span class="text-sm font-medium text-gray-600">P</span>
-                                        </div>
-                                        <div>
-                                            <p class="text-sm font-medium text-gray-900">Prof. Kenjiro Ito</p>
-                                            <p class="text-xs text-gray-500">Professor, Computer Science</p>
+                                        <h3 class="text-lg font-semibold text-gray-900 mb-2 hover:text-primary-600 cursor-pointer">
+                                            ${blog.title || 'Untitled Blog'}
+                                        </h3>
+                                        <p class="text-gray-600 text-sm mb-4 line-clamp-2">${blog.excerpt || ''}</p>
+                                        <div class="flex items-center space-x-3">
+                                            <div class="h-8 w-8 rounded-full bg-gray-200 flex items-center justify-center">
+                                                <span class="text-sm font-medium text-gray-600">${blog.authorAvatar || 'A'}</span>
+                                            </div>
+                                            <div>
+                                                <p class="text-sm font-medium text-gray-900">${blog.author || 'Unknown'}</p>
+                                                <p class="text-xs text-gray-500">${blog.authorRole || ''}</p>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
-                            </div>
+                            `).join('') : '<div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 text-sm text-gray-600 md:col-span-2">No featured blogs yet.</div>'}
                         </div>
                     </section>
 
@@ -603,6 +558,43 @@ const router = {
                             <button onclick="router.navigate('/mentors')" class="px-8 py-3 bg-primary-700 text-white font-semibold rounded-lg hover:bg-primary-800 transition-colors">
                                 Browse Mentors
                             </button>
+                        </div>
+                    </section>
+                </div>
+            `;
+        },
+
+        publicAnnouncements() {
+            const announcements = Array.isArray(router.dbData && router.dbData.announcements) ? router.dbData.announcements : [];
+
+            return `
+                <div class="max-w-7xl mx-auto space-y-8">
+                    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                        <div>
+                            <h1 class="text-2xl md:text-3xl font-bold text-gray-900">Announcements</h1>
+                            <p class="text-gray-600 mt-1">Latest updates from the platform</p>
+                        </div>
+                        <button onclick="router.navigate('/')" class="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors">
+                            Back to Home
+                        </button>
+                    </div>
+
+                    <section class="bg-white rounded-lg shadow-sm border border-gray-200 p-4 md:p-6">
+                        <div class="space-y-4">
+                            ${announcements.length ? announcements.map((announcement) => `
+                                <div class="border-l-4 border-primary-500 pl-4 py-2">
+                                    <div class="flex items-center justify-between mb-1">
+                                        <h3 class="font-medium text-gray-900">${announcement.title || 'Announcement'}</h3>
+                                        <span class="text-xs px-2 py-0.5 rounded-full bg-primary-100 text-primary-600">live</span>
+                                    </div>
+                                    <p class="text-sm text-gray-600 mb-1">${announcement.content || ''}</p>
+                                    <p class="text-xs text-gray-400">${announcement.date || announcement.created_at || ''}</p>
+                                </div>
+                            `).join('') : `
+                                <div class="border border-gray-200 rounded-lg p-4 text-sm text-gray-600">
+                                    No announcements available.
+                                </div>
+                            `}
                         </div>
                     </section>
                 </div>
@@ -640,13 +632,13 @@ const router = {
                                     <circle cx="11" cy="11" r="8"/>
                                     <path d="m21 21-4.35-4.35"/>
                                 </svg>
-                                <input type="text" placeholder="Search questions..." class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"/>
+                                <input type="text" placeholder="Search questions..." class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500" oninput="handlePageSearch(this, '.cb-questions-list')"/>
                             </div>
                             <div class="flex items-center space-x-2">
                                 <svg class="h-5 w-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
                                 </svg>
-                                <select class="border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500">
+                                <select onchange="handleSortChange(this, '.cb-questions-list')" class="border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500">
                                     <option>Most Recent</option>
                                     <option>Most Viewed</option>
                                     <option>Most Answered</option>
@@ -659,26 +651,26 @@ const router = {
                     <!-- Categories -->
                     <div class="flex flex-wrap gap-2">
                         ${categories.map((category, index) => `
-                            <button class="px-4 py-2 rounded-full text-sm font-medium transition-colors ${index === 0 ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}">
+                            <button onclick="filterByCategory('${category}', '.cb-questions-list')" class="cb-cat-btn px-4 py-2 rounded-full text-sm font-medium transition-colors ${index === 0 ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}">
                                 ${category}
                             </button>
                         `).join('')}
                     </div>
 
                     <!-- Questions List -->
-                    <div class="space-y-4">
+                    <div class="space-y-4 cb-questions-list">
                         ${questions.length ? questions.map((question) => `
-                            <div class="bg-white border border-gray-200 rounded-2xl shadow-sm p-6 md:p-8 hover:shadow-md transition-shadow">
+                            <div class="bg-white border border-gray-200 rounded-2xl shadow-sm p-6 md:p-8 hover:shadow-md transition-shadow" data-searchable="${escapeAttr(question.title + ' ' + question.content + ' ' + (question.tags || []).join(' '))}" data-category="${question.tags && question.tags[0] ? question.tags[0] : 'General'}">
                                 <div class="flex items-start gap-4">
                                     <!-- Vote Section -->
                                     <div class="flex flex-col items-center space-y-1 pt-1">
-                                        <button class="p-2 text-gray-400 hover:text-primary-600">
+                                        <button onclick="voteQuestion(${question.id}, 'up')" class="p-2 text-gray-400 hover:text-primary-600">
                                             <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path d="m22 8-8 8-8-8"/>
                                             </svg>
                                         </button>
-                                        <span class="text-lg font-semibold text-gray-700">${question.upvotes}</span>
-                                        <button class="p-2 text-gray-400 hover:text-red-600">
+                                        <span id="vote-count-${question.id}" class="text-lg font-semibold text-gray-700">${question.upvotes}</span>
+                                        <button onclick="voteQuestion(${question.id}, 'down')" class="p-2 text-gray-400 hover:text-red-600">
                                             <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path d="m6 9 6 6 6-6"/>
                                             </svg>
@@ -769,6 +761,17 @@ const router = {
                                                 </button>
                                             </div>
                                         ` : '')}
+
+                                        ${router.user && (router.user.role === 'admin' || Number(question.authorId) === Number(router.user.id)) ? `
+                                            <div class="mt-3 flex items-center gap-2">
+                                                <button onclick="openEditQuestionPrompt(${question.id})" class="inline-flex items-center px-3 py-1.5 border border-primary-600 text-primary-600 text-xs font-medium rounded-lg hover:bg-primary-50 transition-colors">
+                                                    Edit
+                                                </button>
+                                                <button onclick="deleteQuestion(${question.id})" class="inline-flex items-center px-3 py-1.5 border border-red-300 text-red-600 text-xs font-medium rounded-lg hover:bg-red-50 transition-colors">
+                                                    Delete
+                                                </button>
+                                            </div>
+                                        ` : ''}
                                     </div>
                                 </div>
                             </div>
@@ -806,13 +809,13 @@ const router = {
                                     <circle cx="11" cy="11" r="8"/>
                                     <path d="m21 21-4.35-4.35"/>
                                 </svg>
-                                <input type="text" placeholder="Search blogs by title, content, or tags..." class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"/>
+                                <input type="text" placeholder="Search blogs by title, content, or tags..." class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500" oninput="handlePageSearch(this, '.cb-blogs-grid')"/>
                             </div>
                             <div class="flex items-center space-x-2">
                                 <svg class="h-5 w-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
                                 </svg>
-                                <select class="border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500">
+                                <select onchange="handleSortChange(this, '.cb-blogs-grid')" class="border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500">
                                     <option>Most Recent</option>
                                     <option>Most Popular</option>
                                     <option>Most Viewed</option>
@@ -824,16 +827,16 @@ const router = {
                     <!-- Categories -->
                     <div class="flex flex-wrap gap-2">
                         ${categories.map((category, index) => `
-                            <button class="px-4 py-2 rounded-full text-sm font-medium transition-colors ${index === 0 ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}">
+                            <button onclick="filterByCategory('${category}', '.cb-blogs-grid')" class="cb-cat-btn px-4 py-2 rounded-full text-sm font-medium transition-colors ${index === 0 ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}">
                                 ${category}
                             </button>
                         `).join('')}
                     </div>
 
                     <!-- Blogs Grid -->
-                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 cb-blogs-grid">
                         ${blogs.length ? blogs.map((blog) => `
-                            <div class="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden hover:shadow-lg transition group cursor-pointer" onclick="router.navigate('/blogs/${blog.id}')">
+                            <div class="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden hover:shadow-lg transition group cursor-pointer" data-category="${escapeAttr(blog.category)}" data-searchable="${escapeAttr(blog.title + ' ' + blog.excerpt + ' ' + (blog.tags || []).join(' ') + ' ' + blog.author)}" onclick="router.navigate('/blogs/${blog.id}')">
                                 <!-- Blog Image Placeholder -->
                                 <div class="h-48 bg-gradient-to-br from-primary-100 to-primary-200 flex items-center justify-center group-hover:from-primary-200 group-hover:to-primary-300 transition-all">
                                     <svg class="h-16 w-16 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -929,7 +932,7 @@ const router = {
                         </div>
                         <div class="flex items-center space-x-4">
                             <div class="text-right">
-                                <span class="text-2xl font-bold text-primary-600">150+</span>
+                                <span class="text-2xl font-bold text-primary-600">${mentors.length.toLocaleString()}</span>
                                 <span class="text-sm text-gray-600 block">Verified Mentors</span>
                             </div>
                         </div>
@@ -943,13 +946,13 @@ const router = {
                                     <circle cx="11" cy="11" r="8"/>
                                     <path d="m21 21-4.35-4.35"/>
                                 </svg>
-                                <input type="text" placeholder="Search mentors by name, company, or skills..." class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"/>
+                                <input type="text" placeholder="Search mentors by name, company, or skills..." class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500" oninput="handlePageSearch(this, '.cb-mentors-grid')"/>
                             </div>
                             <div class="flex items-center space-x-2">
                                 <svg class="h-5 w-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
                                 </svg>
-                                <select class="border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500">
+                                <select onchange="handleSortChange(this, '.cb-mentors-grid')" class="border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500">
                                     <option>Most Experienced</option>
                                     <option>Highest Rated</option>
                                     <option>Most Active</option>
@@ -962,16 +965,16 @@ const router = {
                     <!-- Domain Filters -->
                     <div class="flex flex-wrap gap-2">
                         ${domains.map((domain, index) => `
-                            <button class="px-4 py-2 rounded-full text-sm font-medium transition-colors ${index === 0 ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}">
+                            <button onclick="filterByCategory('${domain}', '.cb-mentors-grid')" class="cb-cat-btn px-4 py-2 rounded-full text-sm font-medium transition-colors ${index === 0 ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}">
                                 ${domain}
                             </button>
                         `).join('')}
                     </div>
 
                     <!-- Mentors Grid -->
-                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 cb-mentors-grid">
                         ${mentors.length ? mentors.map((mentor) => `
-                            <div class="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden hover:shadow-lg transition">
+                            <div class="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden hover:shadow-lg transition" data-searchable="${escapeAttr(mentor.name + ' ' + mentor.company + ' ' + (mentor.skills || []).join(' ') + ' ' + mentor.role)}" data-category="${escapeAttr((mentor.skills && mentor.skills[0]) || 'All')}">
                                 <!-- Header -->
                                 <div class="p-6">
                                     <div class="flex items-start justify-between mb-4">
@@ -1054,7 +1057,7 @@ const router = {
 
                                 <!-- Actions -->
                                 <div class="px-6 pb-6">
-                                    <button class="w-full inline-flex items-center justify-center space-x-2 px-4 py-2 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700 transition-colors">
+                                    <button onclick='sendMentorshipRequest(${mentor.userId || mentor.id}, ${JSON.stringify(mentor.name || "Mentor")})' class="w-full inline-flex items-center justify-center space-x-2 px-4 py-2 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700 transition-colors">
                                         <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
                                             <polyline points="22,6 12,13 2,6"/>
@@ -1145,15 +1148,15 @@ const router = {
                     <!-- Engagement -->
                     <div class="flex items-center justify-between mb-12">
                         <div class="flex items-center space-x-4">
-                            <button class="flex items-center space-x-2 px-4 py-2 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">
+                            <button onclick="likeBlog(${blog.id})" class="flex items-center space-x-2 px-4 py-2 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">
                                 <svg class="h-5 w-5 text-red-500" fill="currentColor" viewBox="0 0 20 20"><path d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z"/></svg>
-                                <span class="font-medium">${blogLikes}</span>
+                                <span id="like-count-${blog.id}" class="font-medium">${blogLikes}</span>
                             </button>
-                            <button class="flex items-center space-x-2 px-4 py-2 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">
+                            <button onclick="showFeatureNotice('Discussion feature coming soon.')" class="flex items-center space-x-2 px-4 py-2 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">
                                 <svg class="h-5 w-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>
                                 <span class="font-medium">Discuss</span>
                             </button>
-                            <button class="flex items-center space-x-2 px-4 py-2 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">
+                            <button onclick="shareBlog(${blog.id})" class="flex items-center space-x-2 px-4 py-2 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">
                                 <svg class="h-5 w-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg>
                                 <span class="font-medium">Share</span>
                             </button>
@@ -1180,7 +1183,7 @@ const router = {
                                     </div>
                                 </div>
                                 <p class="text-gray-600 mb-4">${authorBio}</p>
-                                <button class="btn-primary text-sm">View Profile</button>
+                                <button onclick="openMentorProfileModal(${blog.authorId || 0})" class="btn-primary text-sm">View Profile</button>
                             </div>
                         </div>
                     </div>
@@ -1191,7 +1194,7 @@ const router = {
                         <div class="mb-6">
                             <textarea placeholder="Share your thoughts or ask a question... (Login required)" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500" rows="3"></textarea>
                             <div class="flex justify-end mt-3">
-                                <button class="btn-secondary text-sm">Login to Comment</button>
+                                <button onclick="if(router.user){showFeatureNotice('Comments feature coming soon.')}else{openAuthModal('login')}" class="btn-secondary text-sm">${router.user ? 'Post Comment' : 'Login to Comment'}</button>
                             </div>
                         </div>
                         <div class="space-y-4">
@@ -1206,11 +1209,11 @@ const router = {
                                     </div>
                                     <p class="text-gray-600 text-sm">This is exactly what I needed! Thank you for sharing your journey. How many hours per day did you dedicate to DSA practice?</p>
                                     <div class="flex items-center space-x-4 mt-2">
-                                        <button class="flex items-center space-x-1 text-sm text-gray-500 hover:text-primary-600">
+                                        <button onclick="showFeatureNotice('Comment liked!')" class="flex items-center space-x-1 text-sm text-gray-500 hover:text-primary-600">
                                             <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>
                                             <span>12</span>
                                         </button>
-                                        <button class="text-sm text-gray-500 hover:text-primary-600">Reply</button>
+                                        <button onclick="showFeatureNotice('Reply feature coming soon.')" class="text-sm text-gray-500 hover:text-primary-600">Reply</button>
                                     </div>
                                 </div>
                             </div>
@@ -1243,21 +1246,34 @@ const router = {
 
         // Student Views
         studentDashboard() {
-            const recentQuestions = [
-                { id: 1, title: 'How to prepare for FAANG interviews?', answers: 12, views: 234, hasNewAnswer: true },
-                { id: 2, title: 'Best resources for learning React in 2026?', answers: 8, views: 156, hasNewAnswer: false }
-            ];
+            const currentUser = router.user || {};
+            const myBlogs = this.getMyBlogs();
+            const myPendingBlogs = myBlogs.filter((blog) => String(blog.status || '').toLowerCase() === 'pending');
+            const myPublishedBlogs = myBlogs.filter((blog) => String(blog.status || '').toLowerCase() === 'published');
+            const myRejectedBlogs = myBlogs.filter((blog) => String(blog.status || '').toLowerCase() === 'rejected');
+            const recentQuestions = this.getSampleQuestions().slice(0, 3).map((q) => ({
+                id: q.id,
+                title: q.title,
+                answers: Number(q.answers) || 0,
+                views: Number(q.views) || 0,
+                hasNewAnswer: (Number(q.answers) || 0) > 0
+            }));
 
-            const latestBlogs = [
-                { id: 1, title: 'My Journey from Campus to Google', author: 'Dr. Sakura Sato', category: 'Career Guidance', readTime: '8 min' },
-                { id: 2, title: 'Top 10 Skills for CS Students in 2026', author: 'Prof. James Wilson', category: 'Tech Stacks', readTime: '6 min' }
-            ];
+            const latestBlogs = this.getSampleBlogs().slice(0, 3).map((blog) => ({
+                id: blog.id,
+                title: blog.title,
+                author: blog.author || 'Unknown',
+                category: blog.category || 'General',
+                readTime: blog.readTime || '1 min'
+            }));
 
-            const mentorSuggestions = [
-                { id: 1, name: 'Dr. Sakura Sato', role: 'Senior Software Engineer @ Google', domain: 'Software Development', match: 95 },
-                { id: 2, name: 'Hiroshi Nakamura', role: 'Staff Engineer @ Amazon', domain: 'Cloud Computing', match: 88 },
-                { id: 3, name: 'Dr. Priya Kumar', role: 'AI Research Scientist', domain: 'AI/ML', match: 82 }
-            ];
+            const mentorSuggestions = this.getSampleMentors().slice(0, 3).map((mentor, index) => ({
+                id: mentor.userId || mentor.id,
+                name: mentor.name,
+                role: `${mentor.role || 'Mentor'} @ ${mentor.company || 'N/A'}`,
+                domain: mentor.domain || 'Career Guidance',
+                match: Math.max(70, 95 - (index * 7))
+            }));
 
             return `
                 <div class="max-w-7xl mx-auto space-y-8">
@@ -1265,7 +1281,7 @@ const router = {
                     <div class="bg-white border border-gray-200 rounded-2xl shadow-sm bg-gradient-to-r from-primary-600 to-primary-700 text-white p-6 md:p-8 hover:shadow-md transition">
                         <div class="flex flex-col md:flex-row md:items-center md:justify-between">
                             <div>
-                                <h1 class="text-2xl font-bold mb-2">Welcome back, Kenji!</h1>
+                                <h1 class="text-2xl font-bold mb-2">Welcome back, ${currentUser.name || 'Student'}!</h1>
                                 <p class="text-primary-100">
                                     You have 3 new notifications and 2 unread messages from your mentors.
                                 </p>
@@ -1355,6 +1371,42 @@ const router = {
                                     `).join('')}
                                 </div>
                             </div>
+
+                            <div class="bg-white border border-gray-200 rounded-2xl shadow-sm p-6 md:p-8 hover:shadow-md transition">
+                                <div class="flex items-center justify-between mb-4">
+                                    <h2 class="text-lg font-semibold text-gray-900">My Blog Moderation Status</h2>
+                                    <span class="text-sm text-gray-500">${myBlogs.length} total</span>
+                                </div>
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div class="border border-gray-200 rounded-lg p-4">
+                                        <div class="flex items-center justify-between mb-3">
+                                            <h3 class="text-sm font-semibold text-gray-900">Pending</h3>
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-warning-100 text-warning-600">${myPendingBlogs.length}</span>
+                                        </div>
+                                        <div class="space-y-2">
+                                            ${myPendingBlogs.length ? myPendingBlogs.slice(0, 2).map((blog) => `<div class="rounded-lg border border-gray-200 p-2"><p class="text-sm font-medium text-gray-900 line-clamp-1">${blog.title || 'Untitled Blog'}</p><p class="text-xs text-gray-500 mt-1">${blog.date || 'Recently'}</p></div>`).join('') : '<p class="text-xs text-gray-500">No pending blogs.</p>'}
+                                        </div>
+                                    </div>
+                                    <div class="border border-gray-200 rounded-lg p-4">
+                                        <div class="flex items-center justify-between mb-3">
+                                            <h3 class="text-sm font-semibold text-gray-900">Published</h3>
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-success-100 text-success-600">${myPublishedBlogs.length}</span>
+                                        </div>
+                                        <div class="space-y-2">
+                                            ${myPublishedBlogs.length ? myPublishedBlogs.slice(0, 2).map((blog) => `<div class="rounded-lg border border-gray-200 p-2"><p class="text-sm font-medium text-gray-900 line-clamp-1">${blog.title || 'Untitled Blog'}</p><p class="text-xs text-gray-500 mt-1">${blog.date || 'Recently'}</p></div>`).join('') : '<p class="text-xs text-gray-500">No published blogs.</p>'}
+                                        </div>
+                                    </div>
+                                    <div class="border border-gray-200 rounded-lg p-4">
+                                        <div class="flex items-center justify-between mb-3">
+                                            <h3 class="text-sm font-semibold text-gray-900">Rejected</h3>
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-600">${myRejectedBlogs.length}</span>
+                                        </div>
+                                        <div class="space-y-2">
+                                            ${myRejectedBlogs.length ? myRejectedBlogs.slice(0, 2).map((blog) => `<div class="rounded-lg border border-gray-200 p-2"><p class="text-sm font-medium text-gray-900 line-clamp-1">${blog.title || 'Untitled Blog'}</p><p class="text-xs text-gray-500 mt-1">${blog.date || 'Recently'}</p></div>`).join('') : '<p class="text-xs text-gray-500">No rejected blogs.</p>'}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
                         <!-- Right Column -->
@@ -1387,7 +1439,7 @@ const router = {
                                                     ${mentor.match}% match
                                                 </span>
                                             </div>
-                                            <button class="w-full mt-3 py-1.5 text-xs font-medium text-primary-600 border border-primary-600 rounded hover:bg-primary-50 transition-colors">
+                                            <button onclick='sendMentorshipRequest(${mentor.id}, ${JSON.stringify(mentor.name)})' class="w-full mt-3 py-1.5 text-xs font-medium text-primary-600 border border-primary-600 rounded hover:bg-primary-50 transition-colors">
                                                 Request Mentorship
                                             </button>
                                         </div>
@@ -1410,6 +1462,20 @@ const router = {
         studentBlogs() {
             const categories = ['All', 'Career Guidance', 'Tech Stacks', 'Internships', 'Industry Insights', 'Interview Tips', 'Higher Studies'];
             const blogs = this.getSampleBlogs();
+            const myBlogs = this.getMyBlogs();
+            const pendingBlogs = myBlogs.filter((blog) => String(blog.status || '').toLowerCase() === 'pending');
+            const publishedBlogs = myBlogs.filter((blog) => String(blog.status || '').toLowerCase() === 'published');
+            const rejectedBlogs = myBlogs.filter((blog) => String(blog.status || '').toLowerCase() === 'rejected');
+
+            const renderMyBlogStatusItem = (blog, badgeClass, label) => `
+                <div class="border border-gray-200 rounded-lg p-3">
+                    <div class="flex items-center justify-between gap-2">
+                        <p class="text-sm font-medium text-gray-900 line-clamp-1">${blog.title || 'Untitled Blog'}</p>
+                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${badgeClass}">${label}</span>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-1">${blog.date || 'Recently'}</p>
+                </div>
+            `;
 
             return `
                 <div class="max-w-7xl mx-auto space-y-8">
@@ -1427,6 +1493,42 @@ const router = {
                         </button>
                     </div>
 
+                    <section class="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 md:p-6 hover:shadow-md transition">
+                        <div class="flex items-center justify-between mb-4">
+                            <h2 class="text-lg font-semibold text-gray-900">My Blog Status</h2>
+                            <span class="text-sm text-gray-500">${myBlogs.length} total</span>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div class="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                                <div class="flex items-center justify-between mb-2">
+                                    <h3 class="text-sm font-semibold text-gray-900">Pending</h3>
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-warning-100 text-warning-600">${pendingBlogs.length}</span>
+                                </div>
+                                <div class="space-y-2">
+                                    ${pendingBlogs.length ? pendingBlogs.slice(0, 3).map((blog) => renderMyBlogStatusItem(blog, 'bg-warning-100 text-warning-600', 'Pending')).join('') : '<p class="text-xs text-gray-500">No pending blogs.</p>'}
+                                </div>
+                            </div>
+                            <div class="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                                <div class="flex items-center justify-between mb-2">
+                                    <h3 class="text-sm font-semibold text-gray-900">Published</h3>
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-success-100 text-success-600">${publishedBlogs.length}</span>
+                                </div>
+                                <div class="space-y-2">
+                                    ${publishedBlogs.length ? publishedBlogs.slice(0, 3).map((blog) => renderMyBlogStatusItem(blog, 'bg-success-100 text-success-600', 'Published')).join('') : '<p class="text-xs text-gray-500">No published blogs.</p>'}
+                                </div>
+                            </div>
+                            <div class="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                                <div class="flex items-center justify-between mb-2">
+                                    <h3 class="text-sm font-semibold text-gray-900">Rejected</h3>
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-600">${rejectedBlogs.length}</span>
+                                </div>
+                                <div class="space-y-2">
+                                    ${rejectedBlogs.length ? rejectedBlogs.slice(0, 3).map((blog) => renderMyBlogStatusItem(blog, 'bg-red-100 text-red-600', 'Rejected')).join('') : '<p class="text-xs text-gray-500">No rejected blogs.</p>'}
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
                     <!-- Search and Filter -->
                     <div class="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 md:p-6 hover:shadow-md transition">
                         <div class="flex flex-col md:flex-row gap-4">
@@ -1435,13 +1537,13 @@ const router = {
                                     <circle cx="11" cy="11" r="8"/>
                                     <path d="m21 21-4.35-4.35"/>
                                 </svg>
-                                <input type="text" placeholder="Search blogs by title, content, or tags..." class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"/>
+                                <input type="text" placeholder="Search blogs by title, content, or tags..." class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500" oninput="handlePageSearch(this, '.cb-stu-blogs-grid')"/>
                             </div>
                             <div class="flex items-center space-x-2">
                                 <svg class="h-5 w-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
                                 </svg>
-                                <select class="border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500">
+                                <select onchange="handleSortChange(this, '.cb-stu-blogs-grid')" class="border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500">
                                     <option>Most Recent</option>
                                     <option>Most Popular</option>
                                     <option>Most Viewed</option>
@@ -1453,19 +1555,16 @@ const router = {
                     <!-- Categories -->
                     <div class="flex flex-wrap gap-2">
                         ${categories.map((category, index) => `
-                            <button class="px-4 py-2 rounded-full text-sm font-medium transition-colors ${index === 0 ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}">
+                            <button onclick="filterByCategory('${category}', '.cb-stu-blogs-grid')" class="cb-cat-btn px-4 py-2 rounded-full text-sm font-medium transition-colors ${index === 0 ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}">
                                 ${category}
                             </button>
                         `).join('')}
                     </div>
 
                     <!-- Blogs Grid -->
-                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 cb-stu-blogs-grid">
                         ${blogs.length ? blogs.map((blog) => `
-                            <div class="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden hover:shadow-lg transition group cursor-pointer" onclick="router.navigate('/blogs/${blog.id}')">
-                                <div class="h-48 bg-gradient-to-br from-primary-100 to-primary-200 flex items-center justify-center group-hover:from-primary-200 group-hover:to-primary-300 transition-all">
-                                    <svg class="h-16 w-16 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+                            <div class="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden hover:shadow-lg transition group cursor-pointer" data-category="${escapeAttr(blog.category)}" data-searchable="${escapeAttr(blog.title + ' ' + blog.excerpt + ' ' + (blog.tags || []).join(' ') + ' ' + blog.author)}" onclick="router.navigate('/blogs/${blog.id}')">
                                         <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
                                     </svg>
                                 </div>
@@ -1499,6 +1598,12 @@ const router = {
                                         </span>
                                         <span>${blog.views.toLocaleString()} views</span>
                                     </div>
+                                    ${router.user && (router.user.role === 'admin' || Number(blog.authorId) === Number(router.user.id)) ? `
+                                        <div class="mt-3 flex items-center gap-2">
+                                            <button onclick="event.stopPropagation(); openEditBlogPrompt(${blog.id})" class="px-3 py-1.5 text-xs font-medium text-primary-600 border border-primary-600 rounded-lg hover:bg-primary-50 transition-colors">Edit</button>
+                                            <button onclick="event.stopPropagation(); deleteBlog(${blog.id})" class="px-3 py-1.5 text-xs font-medium text-red-600 border border-red-300 rounded-lg hover:bg-red-50 transition-colors">Delete</button>
+                                        </div>
+                                    ` : ''}
                                 </div>
                             </div>
                         `).join('') : '<div class="card p-6 text-sm text-gray-600 md:col-span-2 lg:col-span-3">No blogs found for your dashboard.</div>'}
@@ -1517,18 +1622,46 @@ const router = {
         },
 
         studentMentorship() {
-            const availableMentors = [
-                { id: 1, name: 'Dr. Sakura Sato', role: 'Senior Software Engineer', company: 'Google', location: 'Mountain View, CA', avatar: 'S', domain: 'Software Development', experience: '10+ years', alumni: true, batch: '2010', skills: ['System Design', 'Java', 'Python', 'Leadership'], rating: 4.9, reviews: 45, bio: 'Experienced software engineer with expertise in distributed systems.', availability: 'Available' },
-                { id: 2, name: 'Hiroshi Nakamura', role: 'Staff Engineer', company: 'Amazon', location: 'Seattle, WA', avatar: 'M', domain: 'Cloud Computing', experience: '8+ years', alumni: true, batch: '2015', skills: ['AWS', 'Kubernetes', 'Microservices'], rating: 4.9, reviews: 38, bio: 'Cloud architecture specialist with deep AWS expertise.', availability: 'Available' },
-                { id: 3, name: 'Dr. Priya Kumar', role: 'AI Research Scientist', company: 'OpenAI', location: 'San Francisco, CA', avatar: 'P', domain: 'AI/ML', experience: '6+ years', alumni: true, batch: '2017', skills: ['Machine Learning', 'Deep Learning', 'Python'], rating: 5.0, reviews: 32, bio: 'AI researcher working on cutting-edge language models.', availability: 'Limited spots' }
-            ];
-            const myRequests = [
-                { id: 1, mentorName: 'Prof. James Wilson', domain: 'Software Development', status: 'pending', requestedDate: 'Jan 25, 2026', message: 'I would like guidance on preparing for technical interviews.' },
-                { id: 2, mentorName: 'Ananya Reddy', domain: 'Product Management', status: 'accepted', requestedDate: 'Jan 20, 2026', responseDate: 'Jan 22, 2026' }
-            ];
-            const activeMentorships = [
-                { id: 1, mentorName: 'Ananya Reddy', mentorRole: 'Product Manager @ Microsoft', domain: 'Product Management', startDate: 'Jan 22, 2026', lastChat: '2 hours ago', unreadMessages: 3, progress: 'In Progress' }
-            ];
+            const availableMentors = this.getSampleMentors().map((mentor) => ({
+                id: mentor.userId || mentor.id,
+                userId: mentor.userId || mentor.id,
+                name: mentor.name,
+                role: mentor.role || 'Mentor',
+                company: mentor.company || 'N/A',
+                location: mentor.location || 'N/A',
+                avatar: mentor.avatar || 'M',
+                domain: mentor.domain || 'Career Guidance',
+                experience: mentor.experience || '5+ years',
+                alumni: mentor.alumni !== false,
+                batch: mentor.batch || null,
+                skills: Array.isArray(mentor.skills) ? mentor.skills : ['Mentorship'],
+                rating: mentor.rating || 4.8,
+                reviews: mentor.reviews || 0,
+                bio: mentor.bio || 'Available to guide students.',
+                availability: 'Available'
+            }));
+            const allRequests = Array.isArray(router.dbData && router.dbData.mentorshipRequests) ? router.dbData.mentorshipRequests : [];
+            const myRequests = allRequests.map((request) => ({
+                id: request.id,
+                mentorName: request.mentor_name || 'Mentor',
+                domain: 'Mentorship',
+                status: request.status || 'pending',
+                requestedDate: request.created_at || '',
+                responseDate: request.updated_at || '',
+                message: request.message || ''
+            }));
+            const activeMentorships = allRequests
+                .filter((request) => ['approved', 'completed'].includes(String(request.status || '').toLowerCase()))
+                .map((request) => ({
+                    id: request.id,
+                    mentorName: request.mentor_name || 'Mentor',
+                    mentorRole: 'Mentor',
+                    domain: 'Mentorship',
+                    startDate: request.created_at || '',
+                    lastChat: 'Recently',
+                    unreadMessages: 0,
+                    progress: String(request.status || 'approved').toLowerCase() === 'completed' ? 'Completed' : 'In Progress'
+                }));
             const domains = ['All', 'Software Development', 'Data Science', 'Product Management', 'UX/UI Design', 'Cloud Computing', 'Cybersecurity', 'AI/ML'];
 
             return `
@@ -1623,7 +1756,7 @@ const router = {
 
                     <!-- My Requests Tab -->
                     <div id="mentorshipTab-requests" class="mentorship-panel space-y-4 hidden">
-                        ${myRequests.map(request => `
+                        ${myRequests.length ? myRequests.map(request => `
                             <div class="bg-white border border-gray-200 rounded-2xl shadow-sm p-6 md:p-8 hover:shadow-md transition">
                                 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                                     <div>
@@ -1633,19 +1766,23 @@ const router = {
                                         ${request.message ? '<p class="text-sm text-gray-600 mt-2 italic">"' + request.message + '"</p>' : ''}
                                     </div>
                                     <div class="sm:text-right">
-                                        ${request.status === 'pending' ?
-                                            '<span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-warning-100 text-warning-600"><svg class="h-4 w-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> Pending</span>' :
-                                            '<span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-success-100 text-success-600"><svg class="h-4 w-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> Accepted</span>'
+                                        ${request.status === 'pending'
+                                            ? '<span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-warning-100 text-warning-600"><svg class="h-4 w-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> Pending</span>'
+                                            : request.status === 'rejected'
+                                                ? '<span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-600">Rejected</span>'
+                                                : request.status === 'completed'
+                                                    ? '<span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-primary-100 text-primary-600">Completed</span>'
+                                                    : '<span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-success-100 text-success-600"><svg class="h-4 w-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> Approved</span>'
                                         }
                                     </div>
                                 </div>
                             </div>
-                        `).join('')}
+                        `).join('') : '<div class="bg-white border border-gray-200 rounded-2xl shadow-sm p-6 text-sm text-gray-600">No mentorship requests yet.</div>'}
                     </div>
 
                     <!-- Active Mentorships Tab -->
                     <div id="mentorshipTab-active" class="mentorship-panel space-y-4 hidden">
-                        ${activeMentorships.map(m => `
+                        ${activeMentorships.length ? activeMentorships.map(m => `
                             <div class="bg-white border border-gray-200 rounded-2xl shadow-sm p-6 md:p-8 hover:shadow-md transition">
                                 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                                     <div class="flex items-center space-x-4">
@@ -1658,7 +1795,7 @@ const router = {
                                         </div>
                                     </div>
                                     <div class="sm:text-right ml-18 sm:ml-0">
-                                        <button onclick="alert('Open chat with ${m.mentorName}')" class="btn-primary flex items-center space-x-2">
+                                        <button onclick='openMentorshipChat(${JSON.stringify(m.mentorName)}, "student")' class="btn-primary flex items-center space-x-2">
                                             <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>
                                             <span>Open Chat</span>
                                             ${m.unreadMessages > 0 ? '<span class="ml-2 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">' + m.unreadMessages + '</span>' : ''}
@@ -1667,33 +1804,47 @@ const router = {
                                     </div>
                                 </div>
                             </div>
-                        `).join('')}
+                        `).join('') : '<div class="bg-white border border-gray-200 rounded-2xl shadow-sm p-6 text-sm text-gray-600">No active mentorships yet.</div>'}
                     </div>
                 </div>
             `;
         },
 
         studentProfile() {
+            const user = router.user || {};
+            const allQuestions = this.getSampleQuestions();
+            const myQuestions = allQuestions.filter((q) => Number(q.authorId) === Number(user.id));
+            const myBlogs = this.getMyBlogs();
+            const allRequests = Array.isArray(router.dbData && router.dbData.mentorshipRequests) ? router.dbData.mentorshipRequests : [];
+            const mentorSource = this.getSampleMentors().find((mentor) => Number(mentor.userId || mentor.id) === Number(user.id));
+
             const studentData = {
-                name: 'Kenji Tanaka',
-                email: 'kenji.tanaka@college.edu',
-                phone: '+91 98765 43210',
-                branch: 'Computer Science',
-                year: '3rd Year',
-                rollNumber: 'CS2023001',
-                joinedDate: 'August 2023',
-                location: 'Campus Hostel',
-                bio: 'Passionate about software development and AI. Looking for mentorship in full-stack development and career guidance.',
-                interests: ['Web Development', 'Machine Learning', 'Cloud Computing', 'System Design'],
-                skills: ['JavaScript', 'Python', 'React', 'Node.js', 'SQL'],
+                name: user.name || 'Student User',
+                email: user.email || 'N/A',
+                phone: 'Not added',
+                branch: mentorSource && mentorSource.branch ? mentorSource.branch : 'Not specified',
+                year: mentorSource && mentorSource.year ? String(mentorSource.year) : 'Not specified',
+                rollNumber: mentorSource && mentorSource.rollNumber ? mentorSource.rollNumber : 'Not specified',
+                joinedDate: 'Active account',
+                location: 'Not specified',
+                bio: mentorSource && mentorSource.bio ? mentorSource.bio : 'Update your profile to add bio.',
+                interests: ['Career Guidance'],
+                skills: ['Learning'],
                 idCardStatus: 'verified'
             };
-            const stats = { questionsAsked: 5, questionsAnswered: 12, blogsWritten: 2, blogsPending: 1, mentorshipsActive: 1, mentorshipsCompleted: 0 };
+            const stats = {
+                questionsAsked: myQuestions.length,
+                questionsAnswered: allQuestions.reduce((sum, q) => sum + (Number(q.answers) || 0), 0),
+                blogsWritten: myBlogs.length,
+                blogsPending: myBlogs.filter((blog) => blog.status === 'pending').length,
+                mentorshipsActive: allRequests.filter((request) => request.status === 'approved').length,
+                mentorshipsCompleted: allRequests.filter((request) => request.status === 'completed').length
+            };
             const recentActivity = [
-                { type: 'question', title: 'How to prepare for FAANG interviews?', date: '2 days ago' },
-                { type: 'blog', title: 'My Experience with Summer Internship', date: '1 week ago' },
-                { type: 'mentorship', title: 'Connected with Ananya Reddy', date: '2 weeks ago' }
-            ];
+                ...myQuestions.slice(0, 2).map((question) => ({ type: 'question', title: question.title, date: question.timeAgo || 'Recently' })),
+                ...myBlogs.slice(0, 2).map((blog) => ({ type: 'blog', title: blog.title, date: blog.date || 'Recently' })),
+                ...allRequests.slice(0, 1).map((request) => ({ type: 'mentorship', title: `Request with ${request.mentor_name || 'mentor'}`, date: request.created_at || 'Recently' }))
+            ].slice(0, 3);
 
             return `
                 <div class="max-w-7xl mx-auto space-y-8">
@@ -1702,9 +1853,13 @@ const router = {
                             <h1 class="text-2xl md:text-3xl font-bold text-gray-900">My Profile</h1>
                             <p class="text-gray-600 mt-1">Manage your personal information and view your activity</p>
                         </div>
-                        <button onclick="alert('Edit profile toggled')" class="btn-secondary flex items-center justify-center space-x-2">
+                        <button onclick="openProfileEditModal()" class="btn-secondary flex items-center justify-center space-x-2">
                             <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                             <span>Edit Profile</span>
+                        </button>
+                        <button onclick="openChangePasswordModal()" class="btn-secondary flex items-center justify-center space-x-2 border border-primary-600 text-primary-600 hover:bg-primary-50">
+                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                            <span>Change Password</span>
                         </button>
                     </div>
 
@@ -1716,7 +1871,7 @@ const router = {
                                     <div class="h-24 w-24 md:h-32 md:w-32 rounded-full bg-gradient-to-br from-primary-100 to-primary-200 mx-auto flex items-center justify-center">
                                         <span class="text-3xl md:text-4xl font-bold text-primary-700">${studentData.name[0]}</span>
                                     </div>
-                                    <button class="absolute bottom-0 right-0 p-2 bg-primary-600 text-white rounded-full hover:bg-primary-700 transition-colors">
+                                    <button onclick="showFeatureNotice('Profile picture upload coming soon.')" class="absolute bottom-0 right-0 p-2 bg-primary-600 text-white rounded-full hover:bg-primary-700 transition-colors">
                                         <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
                                     </button>
                                 </div>
@@ -1825,30 +1980,55 @@ const router = {
                             <div class="bg-white border border-gray-200 rounded-2xl shadow-sm p-6 md:p-8 hover:shadow-md transition">
                                 <h3 class="font-semibold text-gray-900 mb-4">My Questions</h3>
                                 <div class="space-y-3">
-                                    <div class="flex items-center justify-between p-3 border border-gray-200 rounded-xl hover:bg-gray-50 transition">
-                                        <div><p class="font-medium text-gray-900 text-sm">How to prepare for FAANG interviews?</p><p class="text-xs text-gray-500 mt-0.5">12 answers • 234 views</p></div>
-                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-success-100 text-success-600">Answered</span>
-                                    </div>
-                                    <div class="flex items-center justify-between p-3 border border-gray-200 rounded-xl hover:bg-gray-50 transition">
-                                        <div><p class="font-medium text-gray-900 text-sm">Best resources for learning React?</p><p class="text-xs text-gray-500 mt-0.5">8 answers • 156 views</p></div>
-                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-warning-100 text-warning-600">Open</span>
-                                    </div>
+                                    ${myQuestions.length ? myQuestions.slice(0, 5).map((question) => `
+                                        <div class="flex items-center justify-between p-3 border border-gray-200 rounded-xl hover:bg-gray-50 transition">
+                                            <div>
+                                                <p class="font-medium text-gray-900 text-sm">${question.title || 'Untitled question'}</p>
+                                                <p class="text-xs text-gray-500 mt-0.5">${Number(question.answers) || 0} answers • ${Number(question.views) || 0} views</p>
+                                            </div>
+                                            <div class="flex items-center gap-2">
+                                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${(Number(question.answers) || 0) > 0 ? 'bg-success-100 text-success-600' : 'bg-warning-100 text-warning-600'}">
+                                                    ${(Number(question.answers) || 0) > 0 ? 'Answered' : 'Open'}
+                                                </span>
+                                                <button onclick="openEditQuestionPrompt(${Number(question.id)})" class="px-3 py-1 text-xs font-medium text-primary-600 border border-primary-600 rounded hover:bg-primary-50 transition-colors">
+                                                    Edit
+                                                </button>
+                                            </div>
+                                        </div>
+                                    `).join('') : '<div class="p-3 border border-gray-200 rounded-xl text-sm text-gray-600">No questions posted yet.</div>'}
                                 </div>
                             </div>
                             <div class="bg-white border border-gray-200 rounded-2xl shadow-sm p-6 md:p-8 hover:shadow-md transition">
                                 <h3 class="font-semibold text-gray-900 mb-4">My Blogs</h3>
                                 <div class="space-y-3">
-                                    <div class="flex items-center justify-between p-3 border border-gray-200 rounded-xl hover:bg-gray-50 transition">
-                                        <div><p class="font-medium text-gray-900 text-sm">My Experience with Summer Internship</p><p class="text-xs text-gray-500 mt-0.5">234 views • 45 likes</p></div>
-                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-success-100 text-success-600">Published</span>
-                                    </div>
-                                    <div class="flex items-center justify-between p-3 border border-gray-200 rounded-xl hover:bg-gray-50 transition">
-                                        <div><p class="font-medium text-gray-900 text-sm">How I Cracked My First Coding Interview</p><p class="text-xs text-gray-500 mt-0.5">Submitted 2 days ago</p></div>
-                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-warning-100 text-warning-600">Pending Review</span>
-                                    </div>
+                                    ${myBlogs.length ? myBlogs.slice(0, 5).map((blog) => `
+                                        <div class="flex items-center justify-between p-3 border border-gray-200 rounded-xl hover:bg-gray-50 transition">
+                                            <div>
+                                                <p class="font-medium text-gray-900 text-sm">${blog.title || 'Untitled blog'}</p>
+                                                <p class="text-xs text-gray-500 mt-0.5">${Number(blog.views) || 0} views • ${blog.date || 'Recently'}</p>
+                                            </div>
+                                            <div class="flex items-center gap-2">
+                                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${String(blog.status || '').toLowerCase() === 'published' ? 'bg-success-100 text-success-600' : String(blog.status || '').toLowerCase() === 'rejected' ? 'bg-red-100 text-red-600' : 'bg-warning-100 text-warning-600'}">
+                                                    ${String(blog.status || '').toLowerCase() === 'published' ? 'Published' : String(blog.status || '').toLowerCase() === 'rejected' ? 'Rejected' : 'Pending Review'}
+                                                </span>
+                                                <button onclick="viewBlogDetails(${Number(blog.id)})" class="px-3 py-1 text-xs font-medium text-primary-600 border border-primary-600 rounded hover:bg-primary-50 transition-colors">
+                                                    View
+                                                </button>
+                                            </div>
+                                        </div>
+                                    `).join('') : '<div class="p-3 border border-gray-200 rounded-xl text-sm text-gray-600">No blogs created yet.</div>'}
                                 </div>
                             </div>
                         </div>
+                    </div>
+
+                    <!-- Danger Zone -->
+                    <div class="bg-red-50 rounded-2xl p-6 border border-red-200">
+                        <h3 class="text-lg font-semibold text-red-900 mb-2">Danger Zone</h3>
+                        <p class="text-sm text-red-700 mb-4">Once you delete your account, there is no going back. Please be certain.</p>
+                        <button onclick="deleteCurrentAccount()" class="px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 transition-colors">
+                            Delete Account
+                        </button>
                     </div>
                 </div>
             `;
@@ -1919,26 +2099,53 @@ const router = {
 
         // Mentor Views
         mentorDashboard() {
-            const pendingRequests = [
-                { id: 1, studentName: 'Riku Suzuki', year: '3rd Year', branch: 'Computer Science', domain: 'Software Development', message: 'I want to learn about full-stack development and prepare for interviews.', requestedDate: '2 hours ago' },
-                { id: 2, studentName: 'Hana Takahashi', year: '2nd Year', branch: 'Computer Science', domain: 'Web Development', message: 'Looking for guidance on React and modern frontend technologies.', requestedDate: '5 hours ago' },
-                { id: 3, studentName: 'Ren Yamamoto', year: '4th Year', branch: 'Information Technology', domain: 'System Design', message: 'Need help preparing for system design interviews at top tech companies.', requestedDate: '1 day ago' }
-            ];
+            const currentUser = router.user || {};
+            const mentorshipRequests = Array.isArray(router.dbData && router.dbData.mentorshipRequests) ? router.dbData.mentorshipRequests : [];
+            const pendingRequests = mentorshipRequests
+                .filter((request) => String(request.status || '').toLowerCase() === 'pending')
+                .map((request) => ({
+                    id: request.id,
+                    studentName: request.student_name || 'Student',
+                    year: 'Student',
+                    branch: 'N/A',
+                    domain: 'Mentorship',
+                    message: request.message || 'No message',
+                    requestedDate: request.created_at || 'Recently'
+                }));
 
-            const taggedQuestions = [
-                { id: 1, title: 'How to prepare for system design interviews?', student: 'Kaito Saito', answers: 3, timeAgo: '2 hours ago', status: 'unanswered' },
-                { id: 2, title: 'Best practices for scalable architecture?', student: 'Yui Kobayashi', answers: 5, timeAgo: '5 hours ago', status: 'answered' }
-            ];
+            const taggedQuestions = this.getSampleQuestions().slice(0, 6).map((question) => ({
+                id: question.id,
+                title: question.title,
+                student: question.author || 'Student',
+                answers: Number(question.answers) || 0,
+                timeAgo: question.timeAgo || 'Recently',
+                status: (Number(question.answers) || 0) > 0 ? 'answered' : 'unanswered'
+            }));
 
-            const myStudents = [
-                { id: 1, name: 'Kenji Tanaka', year: '3rd Year', branch: 'Computer Science', progress: 'In Progress', lastChat: '2 hours ago', unreadMessages: 2 },
-                { id: 2, name: 'Mei Watanabe', year: '2nd Year', branch: 'Computer Science', progress: 'Just Started', lastChat: '1 day ago', unreadMessages: 0 }
-            ];
+            const myStudents = mentorshipRequests
+                .filter((request) => ['approved', 'completed'].includes(String(request.status || '').toLowerCase()))
+                .map((request) => ({
+                    id: request.id,
+                    name: request.student_name || 'Student',
+                    year: 'Student',
+                    branch: 'N/A',
+                    progress: String(request.status || '').toLowerCase() === 'completed' ? 'Completed' : 'In Progress',
+                    lastChat: request.created_at || 'Recently',
+                    unreadMessages: 0
+                }))
+                .slice(0, 5);
 
-            const recentBlogs = [
-                { id: 1, title: 'My Journey from Campus to Google: A Complete Guide', views: 2340, likes: 156, date: 'Jan 28, 2026', status: 'published' },
-                { id: 2, title: 'Top 5 Mistakes to Avoid in Technical Interviews', views: 1890, likes: 134, date: 'Jan 25, 2026', status: 'published' }
-            ];
+            const recentBlogs = this.getSampleBlogs()
+                .filter((blog) => Number(blog.authorId) === Number(currentUser.id))
+                .slice(0, 4)
+                .map((blog) => ({
+                    id: blog.id,
+                    title: blog.title,
+                    views: Number(blog.views) || 0,
+                    likes: Number(blog.likes) || 0,
+                    date: blog.date || 'Recently',
+                    status: blog.status || 'pending'
+                }));
 
             return `
                 <div class="space-y-6">
@@ -1946,7 +2153,7 @@ const router = {
                     <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-4 md:p-6 bg-gradient-to-r from-success-600 to-success-700 text-white">
                         <div class="flex flex-col md:flex-row md:items-center md:justify-between">
                             <div>
-                                <h1 class="text-2xl font-bold mb-2">Welcome back, Dr. Sakura!</h1>
+                                <h1 class="text-2xl font-bold mb-2">Welcome back, ${currentUser.name || 'Mentor'}!</h1>
                                 <p class="text-success-100">
                                     You have ${pendingRequests.length} new mentorship requests and ${taggedQuestions.filter(q => q.status === 'unanswered').length} questions tagged to you.
                                 </p>
@@ -1980,7 +2187,7 @@ const router = {
                                     <button onclick="router.navigate('/mentor/students')" class="text-sm text-success-600 hover:text-success-700">View All</button>
                                 </div>
                                 <div class="space-y-4">
-                                    ${pendingRequests.map((request) => `
+                                    ${pendingRequests.length ? pendingRequests.map((request) => `
                                         <div class="border border-gray-200 rounded-lg p-4">
                                             <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
                                                 <div class="flex items-start space-x-3">
@@ -1998,16 +2205,16 @@ const router = {
                                                     </div>
                                                 </div>
                                                 <div class="flex space-x-2 ml-15 sm:ml-0 flex-shrink-0">
-                                                    <button class="px-4 py-2 bg-success-600 text-white text-sm rounded-lg hover:bg-success-700 transition-colors">
+                                                    <button onclick="updateMentorshipRequestStatus(${request.id}, 'approved')" class="px-4 py-2 bg-success-600 text-white text-sm rounded-lg hover:bg-success-700 transition-colors">
                                                         Accept
                                                     </button>
-                                                    <button class="px-4 py-2 bg-gray-100 text-gray-700 text-sm rounded-lg hover:bg-gray-200 transition-colors">
+                                                    <button onclick="updateMentorshipRequestStatus(${request.id}, 'rejected')" class="px-4 py-2 bg-gray-100 text-gray-700 text-sm rounded-lg hover:bg-gray-200 transition-colors">
                                                         Decline
                                                     </button>
                                                 </div>
                                             </div>
                                         </div>
-                                    `).join('')}
+                                    `).join('') : '<div class="rounded-lg border border-gray-200 p-4 text-sm text-gray-600">No pending mentorship requests.</div>'}
                                 </div>
                             </div>
 
@@ -2030,7 +2237,7 @@ const router = {
                                     </button>
                                 </div>
                                 <div class="space-y-3">
-                                    ${taggedQuestions.map((question) => `
+                                    ${taggedQuestions.length ? taggedQuestions.map((question) => `
                                         <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                                             <div class="flex-1">
                                                 <h3 class="font-medium text-gray-900 text-sm">${question.title}</h3>
@@ -2054,7 +2261,7 @@ const router = {
                                                 </span>
                                             `}
                                         </div>
-                                    `).join('')}
+                                    `).join('') : '<div class="rounded-lg border border-gray-200 p-4 text-sm text-gray-600">No questions available.</div>'}
                                 </div>
                             </div>
                         </div>
@@ -2073,7 +2280,7 @@ const router = {
                                     My Students
                                 </h2>
                                 <div class="space-y-4">
-                                    ${myStudents.map((student) => `
+                                    ${myStudents.length ? myStudents.map((student) => `
                                         <div class="flex items-center space-x-3 p-3 border border-gray-200 rounded-lg">
                                             <div class="h-10 w-10 rounded-full bg-primary-100 flex items-center justify-center">
                                                 <span class="font-medium text-primary-600">${student.name[0]}</span>
@@ -2083,7 +2290,7 @@ const router = {
                                                 <p class="text-xs text-gray-500">${student.year}, ${student.branch}</p>
                                                 <span class="text-xs text-success-600">${student.progress}</span>
                                             </div>
-                                            <button class="relative p-2 text-success-600 hover:bg-success-50 rounded-lg transition-colors">
+                                            <button onclick='openMentorshipChat(${JSON.stringify(student.name)}, "mentor")' class="relative p-2 text-success-600 hover:bg-success-50 rounded-lg transition-colors">
                                                 <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>
                                                 </svg>
@@ -2094,7 +2301,7 @@ const router = {
                                                 ` : ''}
                                             </button>
                                         </div>
-                                    `).join('')}
+                                    `).join('') : '<div class="rounded-lg border border-gray-200 p-4 text-sm text-gray-600">No active students yet.</div>'}
                                 </div>
                                 <button onclick="router.navigate('/mentor/students')" class="block text-center mt-4 text-sm text-success-600 hover:text-success-700 font-medium">
                                     View All Students
@@ -2119,7 +2326,7 @@ const router = {
                                     </button>
                                 </div>
                                 <div class="space-y-4">
-                                    ${recentBlogs.map((blog) => `
+                                    ${recentBlogs.length ? recentBlogs.map((blog) => `
                                         <div class="flex items-start space-x-4 p-3 hover:bg-gray-50 rounded-lg transition-colors">
                                             <div class="h-12 w-12 bg-gradient-to-br from-purple-100 to-purple-200 rounded-lg flex items-center justify-center flex-shrink-0">
                                                 <svg class="h-6 w-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2139,7 +2346,7 @@ const router = {
                                                 Published
                                             </span>
                                         </div>
-                                    `).join('')}
+                                    `).join('') : '<div class="rounded-lg border border-gray-200 p-4 text-sm text-gray-600">No recent blogs yet.</div>'}
                                 </div>
                             </div>
                         </div>
@@ -2153,58 +2360,24 @@ const router = {
         },
 
         mentorBlogs() {
-            const blogs = [
-                { 
-                    id: 1, 
-                    title: 'My Journey from Campus to Google: A Complete Guide', 
-                    excerpt: 'Sharing my complete journey from college campus placements to landing a role at Google. Includes tips on resume building, interview preparation, and what to expect.',
-                    status: 'published',
-                    views: 2340, 
-                    likes: 156, 
-                    date: 'Jan 28, 2026',
-                    category: 'Career Guidance',
-                    readTime: '8 min read'
-                },
-                { 
-                    id: 2, 
-                    title: 'Top 5 Mistakes to Avoid in Technical Interviews', 
-                    excerpt: 'Common pitfalls that candidates face during technical interviews and how to avoid them. Based on my experience interviewing 100+ candidates.',
-                    status: 'published',
-                    views: 1890, 
-                    likes: 134, 
-                    date: 'Jan 25, 2026',
-                    category: 'Interview Tips',
-                    readTime: '6 min read'
-                },
-                { 
-                    id: 3, 
-                    title: 'Understanding System Design: A Beginner\'s Guide', 
-                    excerpt: 'Everything you need to know about system design interviews. From basic concepts to designing scalable distributed systems.',
-                    status: 'published',
-                    views: 4560, 
-                    likes: 389, 
-                    date: 'Jan 20, 2026',
-                    category: 'System Design',
-                    readTime: '12 min read'
-                },
-                { 
-                    id: 4, 
-                    title: 'Advanced TypeScript Patterns', 
-                    excerpt: 'Deep dive into advanced TypeScript patterns including generics, decorators, and utility types.',
-                    status: 'draft',
-                    views: 0, 
-                    likes: 0, 
-                    date: 'Jan 18, 2026',
-                    category: 'Tech Stacks',
-                    readTime: '10 min read'
-                }
-            ];
+            const blogs = this.getMyBlogs()
+                .map((blog) => ({
+                    id: blog.id,
+                    title: blog.title,
+                    excerpt: blog.excerpt || '',
+                    status: blog.status || 'pending',
+                    views: Number(blog.views) || 0,
+                    likes: Number(blog.likes) || 0,
+                    date: blog.date || 'Recently',
+                    category: blog.category || 'General',
+                    readTime: blog.readTime || '1 min read'
+                }));
 
             const stats = {
-                totalPublished: 3,
-                totalDrafts: 1,
-                totalViews: 8790,
-                totalLikes: 679
+                totalPublished: blogs.filter((blog) => blog.status === 'published').length,
+                totalDrafts: blogs.filter((blog) => blog.status !== 'published').length,
+                totalViews: blogs.reduce((sum, blog) => sum + (Number(blog.views) || 0), 0),
+                totalLikes: blogs.reduce((sum, blog) => sum + (Number(blog.likes) || 0), 0)
             };
 
             return `
@@ -2263,9 +2436,13 @@ const router = {
                                                 <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-success-100 text-success-600">
                                                     Published
                                                 </span>
+                                            ` : blog.status === 'rejected' ? `
+                                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-600">
+                                                    Rejected
+                                                </span>
                                             ` : `
                                                 <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-warning-100 text-warning-600">
-                                                    Draft
+                                                    Pending Review
                                                 </span>
                                             `}
                                         </div>
@@ -2303,24 +2480,24 @@ const router = {
                                         
                                         <div class="flex flex-wrap gap-2">
                                             ${blog.status === 'published' ? `
-                                                <button onclick="alert('View blog: ${blog.title}')" class="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+                                                <button onclick="viewBlogDetails(${blog.id})" class="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
                                                     View
                                                 </button>
-                                                <button onclick="alert('Edit blog: ${blog.title}')" class="px-4 py-2 text-sm font-medium text-primary-600 border border-primary-600 rounded-lg hover:bg-primary-50 transition-colors">
+                                                <button onclick="openEditBlogPrompt(${blog.id})" class="px-4 py-2 text-sm font-medium text-primary-600 border border-primary-600 rounded-lg hover:bg-primary-50 transition-colors">
                                                     Edit
                                                 </button>
-                                                <button onclick="alert('View analytics for: ${blog.title}')" class="px-4 py-2 text-sm font-medium text-success-600 border border-success-600 rounded-lg hover:bg-success-50 transition-colors">
+                                                <button onclick="viewBlogAnalytics(${blog.id})" class="px-4 py-2 text-sm font-medium text-success-600 border border-success-600 rounded-lg hover:bg-success-50 transition-colors">
                                                     Analytics
                                                 </button>
                                             ` : `
-                                                <button onclick="alert('Continue editing: ${blog.title}')" class="px-4 py-2 text-sm font-medium text-warning-600 border border-warning-600 rounded-lg hover:bg-warning-50 transition-colors">
+                                                <button onclick="openEditBlogPrompt(${blog.id})" class="px-4 py-2 text-sm font-medium text-warning-600 border border-warning-600 rounded-lg hover:bg-warning-50 transition-colors">
                                                     Continue Editing
                                                 </button>
-                                                <button onclick="alert('Publish blog: ${blog.title}')" class="px-4 py-2 text-sm font-medium text-success-600 border border-success-600 rounded-lg hover:bg-success-50 transition-colors">
+                                                <button onclick="publishBlogFromDraft(${blog.id})" class="px-4 py-2 text-sm font-medium text-success-600 border border-success-600 rounded-lg hover:bg-success-50 transition-colors">
                                                     Publish
                                                 </button>
                                             `}
-                                            <button onclick="alert('Delete blog: ${blog.title}')" class="px-4 py-2 text-sm font-medium text-red-600 border border-red-600 rounded-lg hover:bg-red-50 transition-colors ml-auto">
+                                            <button onclick="deleteBlog(${blog.id})" class="px-4 py-2 text-sm font-medium text-red-600 border border-red-600 rounded-lg hover:bg-red-50 transition-colors ml-auto">
                                                 Delete
                                             </button>
                                         </div>
@@ -2334,56 +2511,28 @@ const router = {
         },
 
         mentorStudents() {
-            const students = [
-                {
-                    id: 1,
-                    name: 'Kenji Tanaka',
-                    email: 'kenji.t@college.edu',
-                    year: '3rd Year',
-                    branch: 'Computer Science',
-                    avatar: 'K',
-                    interests: ['Web Development', 'System Design'],
-                    progress: 'In Progress',
-                    lastSession: '2 days ago',
-                    nextSession: 'Tomorrow, 3:00 PM',
-                    totalSessions: 12,
-                    status: 'active'
-                },
-                {
-                    id: 2,
-                    name: 'Mei Watanabe',
-                    email: 'mei.w@college.edu',
-                    year: '2nd Year',
-                    branch: 'Computer Science',
-                    avatar: 'M',
-                    interests: ['AI/ML', 'Data Science'],
-                    progress: 'Just Started',
-                    lastSession: '1 week ago',
-                    nextSession: 'Friday, 2:00 PM',
-                    totalSessions: 3,
-                    status: 'active'
-                },
-                {
-                    id: 3,
-                    name: 'Riku Suzuki',
-                    email: 'riku.s@college.edu',
-                    year: '4th Year',
-                    branch: 'Information Technology',
-                    avatar: 'R',
-                    interests: ['Cloud Computing', 'DevOps'],
-                    progress: 'Advanced',
-                    lastSession: '3 days ago',
-                    nextSession: 'Saturday, 10:00 AM',
-                    totalSessions: 20,
-                    status: 'active'
-                }
-            ];
+            const mentorshipRequests = Array.isArray(router.dbData && router.dbData.mentorshipRequests) ? router.dbData.mentorshipRequests : [];
+            const students = mentorshipRequests.map((request) => ({
+                id: request.id,
+                name: request.student_name || 'Student',
+                email: 'N/A',
+                year: 'Student',
+                branch: 'N/A',
+                avatar: (request.student_name || 'S').charAt(0).toUpperCase(),
+                interests: ['Career Guidance'],
+                progress: String(request.status || '').toLowerCase() === 'completed' ? 'Completed' : (String(request.status || '').toLowerCase() === 'approved' ? 'In Progress' : 'Pending'),
+                lastSession: request.created_at || 'Recently',
+                nextSession: 'Not scheduled',
+                totalSessions: String(request.status || '').toLowerCase() === 'completed' ? 1 : 0,
+                status: String(request.status || '').toLowerCase() === 'rejected' ? 'inactive' : 'active',
+                requestStatus: request.status || 'pending'
+            }));
 
             const stats = {
-                totalStudents: 3,
-                activeMentorships: 3,
-                completedMentorships: 0,
-                pendingRequests: 3
+                totalStudents: students.length,
+                activeMentorships: students.filter((student) => student.progress === 'In Progress').length,
+                completedMentorships: students.filter((student) => student.progress === 'Completed').length,
+                pendingRequests: students.filter((student) => String(student.requestStatus).toLowerCase() === 'pending').length
             };
 
             return `
@@ -2395,7 +2544,7 @@ const router = {
                             <p class="text-gray-600 mt-1">Manage your mentorship relationships and track student progress</p>
                         </div>
                         <div class="flex items-center space-x-2">
-                            <button onclick="alert('View pending requests')" class="relative px-4 py-2 bg-warning-100 text-warning-700 rounded-lg font-medium hover:bg-warning-200 transition-colors">
+                            <button onclick="router.navigate('/mentor/dashboard')" class="relative px-4 py-2 bg-warning-100 text-warning-700 rounded-lg font-medium hover:bg-warning-200 transition-colors">
                                 Pending Requests
                                 ${stats.pendingRequests > 0 ? `
                                     <span class="absolute -top-1 -right-1 h-5 w-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
@@ -2428,7 +2577,7 @@ const router = {
 
                     <!-- Students List -->
                     <div class="space-y-4">
-                        ${students.map((student) => `
+                        ${students.length ? students.map((student) => `
                             <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow">
                                 <div class="flex flex-col md:flex-row md:items-start gap-4">
                                     <!-- Avatar -->
@@ -2483,16 +2632,16 @@ const router = {
                                         
                                         <!-- Actions -->
                                         <div class="flex flex-wrap gap-2">
-                                            <button onclick="alert('View profile of ${student.name}')" class="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+                                            <button onclick="openMentorStudentProfileModal(${student.id})" class="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
                                                 View Profile
                                             </button>
-                                            <button onclick="alert('Message ${student.name}')" class="px-4 py-2 text-sm font-medium text-success-600 border border-success-600 rounded-lg hover:bg-success-50 transition-colors flex items-center space-x-1">
+                                            <button onclick='openMentorshipChat(${JSON.stringify(student.name)}, "mentor")' class="px-4 py-2 text-sm font-medium text-success-600 border border-success-600 rounded-lg hover:bg-success-50 transition-colors flex items-center space-x-1">
                                                 <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>
                                                 </svg>
                                                 <span>Message</span>
                                             </button>
-                                            <button onclick="alert('Schedule session with ${student.name}')" class="px-4 py-2 text-sm font-medium text-primary-600 border border-primary-600 rounded-lg hover:bg-primary-50 transition-colors flex items-center space-x-1">
+                                            <button onclick='openMentorshipScheduleModal(${student.id}, ${JSON.stringify(student.name)})' class="px-4 py-2 text-sm font-medium text-primary-600 border border-primary-600 rounded-lg hover:bg-primary-50 transition-colors flex items-center space-x-1">
                                                 <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
                                                     <line x1="16" x2="16" y1="2" y2="6"/>
@@ -2501,7 +2650,7 @@ const router = {
                                                 </svg>
                                                 <span>Schedule</span>
                                             </button>
-                                            <button onclick="alert('View progress of ${student.name}')" class="px-4 py-2 text-sm font-medium text-purple-600 border border-purple-600 rounded-lg hover:bg-purple-50 transition-colors flex items-center space-x-1 ml-auto">
+                                            <button onclick="markMentorshipCompleted(${student.id})" class="px-4 py-2 text-sm font-medium text-purple-600 border border-purple-600 rounded-lg hover:bg-purple-50 transition-colors flex items-center space-x-1 ml-auto">
                                                 <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
                                                     <polyline points="22 4 12 14.01 9 11.01"/>
@@ -2512,32 +2661,57 @@ const router = {
                                     </div>
                                 </div>
                             </div>
-                        `).join('')}
+                        `).join('') : '<div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 text-sm text-gray-600">No student mentorship records found.</div>'}
                     </div>
                 </div>
             `;
         },
 
         mentorProfile() {
+            const currentUser = router.user || {};
+            const mentorSource = this.getSampleMentors().find((mentor) => Number(mentor.userId || mentor.id) === Number(currentUser.id));
+            const myBlogs = this.getMyBlogs();
+            const mentorshipRequests = Array.isArray(router.dbData && router.dbData.mentorshipRequests) ? router.dbData.mentorshipRequests : [];
+            const questions = this.getSampleQuestions();
+            const availabilityKey = `mentor_availability_${Number(currentUser.id) || 0}`;
+            const expertiseKey = `mentor_expertise_${Number(currentUser.id) || 0}`;
+            let savedAvailability = '';
+            let savedExpertise = [];
+            try {
+                savedAvailability = localStorage.getItem(availabilityKey) || '';
+                const rawExpertise = localStorage.getItem(expertiseKey) || '';
+                savedExpertise = rawExpertise
+                    .split(',')
+                    .map((item) => item.trim())
+                    .filter(Boolean);
+            } catch (_) {
+                savedAvailability = '';
+                savedExpertise = [];
+            }
+
             const mentorData = {
-                name: 'Dr. Sakura Sato',
-                email: 'mentor@demo.com',
-                role: 'Senior Software Engineer',
-                company: 'Google',
-                location: 'Mountain View, CA',
-                avatar: 'S',
-                batch: '2010',
-                experience: '10+ years',
-                bio: 'Experienced software engineer with expertise in distributed systems and cloud architecture. Passionate about mentoring the next generation of developers. Former Tech Lead at multiple startups.',
-                expertise: ['System Design', 'React', 'Node.js', 'Cloud Architecture', 'Distributed Systems'],
-                skills: ['Java', 'Python', 'Go', 'AWS', 'Kubernetes', 'Microservices'],
+                name: currentUser.name || 'Mentor User',
+                email: currentUser.email || 'N/A',
+                role: mentorSource && mentorSource.role ? mentorSource.role : 'Mentor',
+                company: mentorSource && mentorSource.company ? mentorSource.company : 'N/A',
+                location: mentorSource && mentorSource.location ? mentorSource.location : 'N/A',
+                avatar: (currentUser.name || 'M').charAt(0).toUpperCase(),
+                batch: mentorSource && mentorSource.batch ? mentorSource.batch : 'N/A',
+                experience: mentorSource && mentorSource.experience ? mentorSource.experience : '5+ years',
+                bio: mentorSource && mentorSource.bio ? mentorSource.bio : 'Update your profile with your professional background.',
+                expertise: savedExpertise.length
+                    ? savedExpertise
+                    : (mentorSource && Array.isArray(mentorSource.skills) && mentorSource.skills.length ? mentorSource.skills : ['Mentorship']),
+                skills: savedExpertise.length
+                    ? savedExpertise
+                    : (mentorSource && Array.isArray(mentorSource.skills) && mentorSource.skills.length ? mentorSource.skills : ['Career Guidance']),
                 stats: {
-                    studentsMentored: 24,
-                    questionsAnswered: 156,
-                    blogsPublished: 12,
-                    avgRating: 4.9
+                    studentsMentored: mentorshipRequests.filter((request) => ['approved', 'completed'].includes(String(request.status || '').toLowerCase())).length,
+                    questionsAnswered: questions.reduce((sum, question) => sum + (Number(question.answers) || 0), 0),
+                    blogsPublished: myBlogs.filter((blog) => blog.status === 'published').length,
+                    avgRating: mentorSource && mentorSource.rating ? mentorSource.rating : 4.8
                 },
-                availability: 'Available for mentorship',
+                availability: savedAvailability || 'Available for mentorship',
                 linkedin: '#',
                 website: '#'
             };
@@ -2585,14 +2759,14 @@ const router = {
                                 </div>
                             </div>
                             <div class="flex flex-col space-y-2">
-                                <button onclick="alert('Edit mentor profile')" class="px-4 py-2 bg-success-600 text-white text-sm rounded-lg hover:bg-success-700 transition-colors flex items-center justify-center space-x-2">
+                                <button onclick="openProfileEditModal()" class="px-4 py-2 bg-success-600 text-white text-sm rounded-lg hover:bg-success-700 transition-colors flex items-center justify-center space-x-2">
                                     <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
                                         <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
                                     </svg>
                                     <span>Edit Profile</span>
                                 </button>
-                                <button onclick="alert('Change password')" class="px-4 py-2 text-success-600 text-sm border border-success-600 rounded-lg hover:bg-success-50 transition-colors">
+                                <button onclick="openChangePasswordModal()" class="px-4 py-2 text-success-600 text-sm border border-success-600 rounded-lg hover:bg-success-50 transition-colors">
                                     Change Password
                                 </button>
                             </div>
@@ -2707,7 +2881,7 @@ const router = {
                             <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
                                 <h2 class="text-lg font-semibold text-gray-900 mb-4">Mentorship Settings</h2>
                                 <div class="space-y-3">
-                                    <button onclick="alert('Manage availability')" class="w-full flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition-colors">
+                                    <button onclick="openMentorAvailabilityModal()" class="w-full flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition-colors">
                                         <div class="flex items-center space-x-3">
                                             <svg class="h-5 w-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <circle cx="12" cy="12" r="10"/>
@@ -2719,7 +2893,7 @@ const router = {
                                             <path d="m9 18 6-6-6-6"/>
                                         </svg>
                                     </button>
-                                    <button onclick="alert('Set expertise areas')" class="w-full flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition-colors">
+                                    <button onclick="openMentorExpertiseModal()" class="w-full flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition-colors">
                                         <div class="flex items-center space-x-3">
                                             <svg class="h-5 w-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
@@ -2730,7 +2904,7 @@ const router = {
                                             <path d="m9 18 6-6-6-6"/>
                                         </svg>
                                     </button>
-                                    <button onclick="alert('Notification preferences')" class="w-full flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition-colors">
+                                    <button onclick="openMentorNotificationModal()" class="w-full flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition-colors">
                                         <div class="flex items-center space-x-3">
                                             <svg class="h-5 w-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/>
@@ -2749,7 +2923,7 @@ const router = {
                             <div class="bg-red-50 rounded-lg p-6 border border-red-200">
                                 <h2 class="text-lg font-semibold text-red-900 mb-2">Danger Zone</h2>
                                 <p class="text-sm text-red-700 mb-4">Once you delete your account, there is no going back.</p>
-                                <button onclick="alert('Delete mentor account')" class="w-full px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 transition-colors">
+                                <button onclick="deleteCurrentAccount()" class="w-full px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 transition-colors">
                                     Delete Account
                                 </button>
                             </div>
@@ -3000,7 +3174,7 @@ const router = {
                                 <div class="space-y-4">
                                     ${pendingBlogs.map((blog) => `
                                         <div class="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-                                            <div class="flex-1">
+                                            <div class="flex-1 cursor-pointer" onclick="openAdminBlogReview(${blog.id})">
                                                 <h3 class="font-medium text-gray-900">${blog.title}</h3>
                                                 <div class="flex items-center space-x-3 mt-1 text-sm text-gray-600">
                                                     <span>${blog.author}</span>
@@ -3012,11 +3186,8 @@ const router = {
                                                 <p class="text-xs text-gray-500 mt-1">Submitted: ${blog.submittedDate}</p>
                                             </div>
                                             <div class="flex space-x-2">
-                                                <button class="px-4 py-2 bg-success-600 text-white text-sm rounded-lg hover:bg-success-700 transition-colors">
-                                                    Approve
-                                                </button>
-                                                <button class="px-4 py-2 bg-red-100 text-red-600 text-sm rounded-lg hover:bg-red-200 transition-colors">
-                                                    Reject
+                                                <button onclick="openAdminBlogReview(${blog.id})" class="px-4 py-2 bg-primary-600 text-white text-sm rounded-lg hover:bg-primary-700 transition-colors">
+                                                    Review
                                                 </button>
                                             </div>
                                         </div>
@@ -3056,10 +3227,10 @@ const router = {
                                                 </div>
                                             </div>
                                             <div class="flex space-x-2">
-                                                <button class="px-4 py-2 bg-success-600 text-white text-sm rounded-lg hover:bg-success-700 transition-colors">
+                                                <button onclick="updateUserVerification(${user.id}, 'approved')" class="px-4 py-2 bg-success-600 text-white text-sm rounded-lg hover:bg-success-700 transition-colors">
                                                     Verify
                                                 </button>
-                                                <button class="px-4 py-2 bg-gray-100 text-gray-700 text-sm rounded-lg hover:bg-gray-200 transition-colors">
+                                                <button onclick="router.navigate('/admin/users')" class="px-4 py-2 bg-gray-100 text-gray-700 text-sm rounded-lg hover:bg-gray-200 transition-colors">
                                                     Review
                                                 </button>
                                             </div>
@@ -3194,6 +3365,16 @@ const router = {
             return Array.isArray(router.dbData && router.dbData.blogs) ? router.dbData.blogs : [];
         },
 
+        getMyBlogs() {
+            const mine = Array.isArray(router.dbData && router.dbData.myBlogs) ? router.dbData.myBlogs : [];
+            if (mine.length || router.user) {
+                return mine;
+            }
+            const user = router.user || {};
+            const all = Array.isArray(router.dbData && router.dbData.blogs) ? router.dbData.blogs : [];
+            return all.filter((blog) => Number(blog.authorId) === Number(user.id));
+        },
+
 
         getSampleMentors() {
             return Array.isArray(router.dbData && router.dbData.mentors) ? router.dbData.mentors : [];
@@ -3288,7 +3469,9 @@ function reactivateMentor(userId) {
 function handleChatSend(inputId) {
     const input = document.getElementById(inputId);
     if (!input || !input.value.trim()) return;
-    alert('Message sent: ' + input.value);
+    if (typeof showFeatureNotice === 'function') {
+        showFeatureNotice('Message sent.');
+    }
     input.value = '';
 }
 

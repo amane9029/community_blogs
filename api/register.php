@@ -74,9 +74,9 @@ $payload = [
     'password' => password_hash($password, PASSWORD_DEFAULT),
     'role' => $role,
     'status' => 'active',
-    'is_email_verified' => 0,
-    'verification_token' => bin2hex(random_bytes(32)),
-    'verification_status' => 'pending',
+    'is_email_verified' => 1,
+    'verification_token' => null,
+    'verification_status' => 'approved',
 ];
 
 if ($role === 'student') {
@@ -89,7 +89,7 @@ if ($role === 'student') {
     $payload['position'] = api_clean_text($_POST['position'] ?? '');
     $payload['expertise'] = api_clean_text($_POST['expertise'] ?? '');
     $payload['job_id_path'] = $relativeFilePath;
-    $payload['verified_by_admin'] = 0;
+    $payload['verified_by_admin'] = 1;
 }
 
 $result = repo_create_user_with_role($payload);
@@ -102,6 +102,6 @@ if (!$result['success']) {
 
 api_json_response([
     'success' => true,
-    'message' => 'Registration submitted. Your account will be available after admin approval.',
+    'message' => 'Registration successful. You can sign in now.',
     'user_id' => $result['user_id'],
 ]);

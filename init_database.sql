@@ -79,11 +79,18 @@ CREATE TABLE `blogs` (
   `views` INT NOT NULL DEFAULT 0,
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `approved_at` DATETIME DEFAULT NULL,
+  `approved_by` INT DEFAULT NULL,
   KEY `idx_blogs_author_id` (`author_id`),
+  KEY `idx_blogs_approved_by` (`approved_by`),
   CONSTRAINT `fk_blogs_author`
     FOREIGN KEY (`author_id`) REFERENCES `users`(`id`)
     ON UPDATE CASCADE
-    ON DELETE CASCADE
+    ON DELETE CASCADE,
+  CONSTRAINT `fk_blogs_approved_by`
+    FOREIGN KEY (`approved_by`) REFERENCES `users`(`id`)
+    ON UPDATE CASCADE
+    ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `questions` (
@@ -150,3 +157,73 @@ CREATE TABLE `announcements` (
     ON UPDATE CASCADE
     ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
+-- Migration: Add blog moderation/approval columns (idempotent)
+-- Safe to run on existing databases — skips if columns exist.
+-- ============================================================
+
+SET @schema_name = DATABASE();
+
+SET @has_approved_at = (
+    SELECT COUNT(*)
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = @schema_name
+      AND TABLE_NAME = 'blogs'
+      AND COLUMN_NAME = 'approved_at'
+);
+SET @sql_add_approved_at = IF(
+    @has_approved_at = 0,
+    'ALTER TABLE `blogs` ADD COLUMN `approved_at` DATETIME NULL AFTER `updated_at`',
+    'SELECT 1'
+);
+PREPARE stmt FROM @sql_add_approved_at;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @has_approved_by = (
+    SELECT COUNT(*)
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = @schema_name
+      AND TABLE_NAME = 'blogs'
+      AND COLUMN_NAME = 'approved_by'
+);
+SET @sql_add_approved_by = IF(
+    @has_approved_by = 0,
+    'ALTER TABLE `blogs` ADD COLUMN `approved_by` INT NULL AFTER `approved_at`',
+    'SELECT 1'
+);
+PREPARE stmt FROM @sql_add_approved_by;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @has_idx = (
+    SELECT COUNT(*)
+    FROM INFORMATION_SCHEMA.STATISTICS
+    WHERE TABLE_SCHEMA = @schema_name
+      AND TABLE_NAME = 'blogs'
+      AND INDEX_NAME = 'idx_blogs_approved_by'
+);
+SET @sql_add_idx = IF(
+    @has_idx = 0,
+    'ALTER TABLE `blogs` ADD KEY `idx_blogs_approved_by` (`approved_by`)',
+    'SELECT 1'
+);
+PREPARE stmt FROM @sql_add_idx;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @has_fk = (
+    SELECT COUNT(*)
+    FROM INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS
+    WHERE CONSTRAINT_SCHEMA = @schema_name
+      AND CONSTRAINT_NAME = 'fk_blogs_approved_by'
+);
+SET @sql_add_fk = IF(
+    @has_fk = 0,
+    'ALTER TABLE `blogs` ADD CONSTRAINT `fk_blogs_approved_by` FOREIGN KEY (`approved_by`) REFERENCES `users`(`id`) ON UPDATE CASCADE ON DELETE SET NULL',
+    'SELECT 1'
+);
+PREPARE stmt FROM @sql_add_fk;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
