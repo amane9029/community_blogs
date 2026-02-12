@@ -2,11 +2,11 @@
 
 Database-driven community platform for students, mentors, and admins.
 
-## Overview
+## Overview..
 
 - SPA shell is served by `index.php`
 - Backend APIs are in `api/`
-- Data layer uses MySQL only (PDO + prepared statements)
+- Data layer uses MySQL only (PDO + prepared statements).
 - No JSON/mock data is used for authentication or content
 - Frontend loads live DB rows through `api/content.php` + `api/admin.php`
 
