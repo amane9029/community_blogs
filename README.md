@@ -2,7 +2,7 @@
 
 Database-driven community platform for students, mentors, and admins.
 
-## Overview
+## Overview..
 
 - SPA shell is served by `index.php`
 - Backend APIs are in `api/`
