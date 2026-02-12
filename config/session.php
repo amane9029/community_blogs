@@ -12,31 +12,9 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-// Include configuration and mock data (mock-data still used for blogs / questions / mentors)
+// Include configuration and repository
 require_once __DIR__ . '/config.php';
-require_once __DIR__ . '/mock-data.php';
-
-/**
- * Read users from JSON file.
- * Future: swap this for a real DB query.
- */
-function getUserByEmailFromJSON($email)
-{
-    $file = __DIR__ . '/../data/users.json';
-    if (!file_exists($file)) {
-        return null;
-    }
-    $users = json_decode(file_get_contents($file), true);
-    if (!is_array($users)) {
-        return null;
-    }
-    foreach ($users as $user) {
-        if (isset($user['email']) && $user['email'] === $email) {
-            return $user;
-        }
-    }
-    return null;
-}
+require_once __DIR__ . '/repository.php';
 
 /**
  * Generate CSRF token
@@ -58,32 +36,54 @@ function validateCSRFToken($token)
 }
 
 /**
- * Login user with email and password (reads from data/users.json)
+ * Login user with email and password (database only)
  */
 function login($email, $password)
 {
-    $user = getUserByEmailFromJSON($email);
-
-    if ($user && $user['password'] === $password) {
-        // Regenerate session ID to prevent session fixation
-        session_regenerate_id(true);
-        
-        // Store user info in session (exclude password)
-        $_SESSION['user'] = [
-            'id' => $user['id'],
-            'name' => $user['name'],
-            'email' => $user['email'],
-            'role' => $user['role'],
-            'avatar' => $user['avatar'] ?? null
-        ];
-        
-        // Generate CSRF token for this session
-        generateCSRFToken();
-        
-        return ['success' => true];
+    try {
+        $user = repo_fetch_user_by_email($email);
+    } catch (Throwable $e) {
+        error_log('login user lookup failed: ' . $e->getMessage());
+        return ['success' => false, 'error' => 'Authentication service unavailable. Please try again later.'];
     }
 
-    return ['success' => false, 'error' => 'Invalid email or password'];
+    if (!$user) {
+        return ['success' => false, 'error' => 'Invalid email or password'];
+    }
+
+    $storedPassword = $user['password'] ?? '';
+    $passwordValid = is_string($storedPassword) && $storedPassword !== '' && password_verify($password, $storedPassword);
+
+    if (!$passwordValid) {
+        return ['success' => false, 'error' => 'Invalid email or password'];
+    }
+
+    if (($user['status'] ?? 'inactive') !== 'active') {
+        return ['success' => false, 'error' => 'Your account is inactive. Please contact support.'];
+    }
+    if ((int) ($user['is_email_verified'] ?? 0) !== 1) {
+        return ['success' => false, 'error' => 'Please verify your email before signing in.'];
+    }
+    if (($user['verification_status'] ?? 'pending') !== 'approved') {
+        return ['success' => false, 'error' => 'Your account is pending admin approval.'];
+    }
+
+    // Regenerate session ID to prevent session fixation
+    session_regenerate_id(true);
+    
+    // Store user info in session (exclude password)
+    $_SESSION['user'] = [
+        'id' => (int) $user['id'],
+        'name' => $user['name'],
+        'email' => $user['email'],
+        'role' => $user['role'],
+        'avatar' => $user['avatar'] ?? null
+    ];
+    
+    // Generate CSRF token for this session
+    generateCSRFToken();
+    
+    return ['success' => true];
 }
 
 /**
@@ -148,7 +148,7 @@ function requireRole($role)
 /**
  * Handle login form submission
  * Note: AJAX auth is handled by api/auth.php
- * This legacy POST handler is kept for graceful fallback only.
+ * This legacy POST handler is kept for non-JS form submissions.
  */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     // Validate CSRF token for all POST requests

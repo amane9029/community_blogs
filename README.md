@@ -1,147 +1,183 @@
-# Community & Blogs Platform - PHP Preview Version
+# Community & Blogs Platform (PHP + MySQL)
 
-A PHP preview/demo version of the college career-guidance ecosystem platform, converted from React.
+Database-driven community platform for students, mentors, and admins.
 
-## 🎯 Overview
+## Overview
 
-This is a **preview-only PHP version** - no database required. All data is mock/demo data stored in PHP arrays, similar to the original React version.
+- SPA shell is served by `index.php`
+- Backend APIs are in `api/`
+- Data layer uses MySQL only (PDO + prepared statements)
+- No JSON/mock data is used for authentication or content
 
-## ✨ Features
+## Tech Stack
 
-- **Demo Authentication** - Login with test credentials (no real user registration)
-- **Public Pages** - Browse community, blogs, and mentors without login
-- **Student Dashboard** - Mentorship requests, community Q&A, blog writing
-- **Mentor Dashboard** - Student management, verified answers, blog approval
-- **Admin Panel** - User verification, blog moderation, announcements
-- **Responsive Design** - Tailwind CSS for beautiful, mobile-friendly UI
+- PHP 8+
+- MySQL / MariaDB
+- PDO
+- Vanilla JavaScript
+- Tailwind CSS (CDN)
 
-## 🚀 Getting Started
+## Requirements
 
-### Prerequisites
+- XAMPP (Apache + MySQL) or equivalent local PHP/MySQL setup
+- `mod_rewrite` enabled (for `.htaccess` SPA routing)
 
-- PHP 8.0 or higher (check with `php -v`)
+## Quick Start (XAMPP Recommended)
 
-### Installation
+1. Copy project into:
+`C:\xampp\htdocs\community-blogs-php`
 
-1. Navigate to the project directory:
+2. Start:
+- Apache
+- MySQL
+
+3. Import database schema:
+- Open phpMyAdmin
+- Create/select DB `community_blogs`
+- Import file: `init_database.sql`
+
+4. Open app:
+- `http://localhost/community-blogs-php/`
+
+Do not use `http://localhost:5173` for this PHP app.
+
+## Database Configuration
+
+Defaults come from `config/config.php`:
+
+- `DB_HOST=localhost`
+- `DB_PORT=3306`
+- `DB_NAME=community_blogs`
+- `DB_USER=root`
+- `DB_PASS=` (empty by default in XAMPP)
+
+You can override via environment variables:
+
+- `DB_HOST`
+- `DB_PORT`
+- `DB_NAME`
+- `DB_USER`
+- `DB_PASS`
+- `BASE_URL` (optional)
+
+## Important Login Requirements
+
+Authentication is strict and DB-only:
+
+- Password must be stored as `password_hash(...)`
+- Account must satisfy:
+  - `status = 'active'`
+  - `is_email_verified = 1`
+  - `verification_status = 'approved'`
+
+If any one is missing, login fails.
+
+## Create Demo Users (Required for First Login)
+
+`init_database.sql` creates tables only, not users.  
+Create users manually in phpMyAdmin or SQL.
+
+1. Generate hash in terminal:
+
 ```bash
-cd community-blogs-php
+php -r "echo password_hash('123456', PASSWORD_DEFAULT), PHP_EOL;"
 ```
 
-2. Start the PHP built-in server:
-```bash
-php -S localhost:8000
+2. Use generated hash in SQL:
+
+```sql
+INSERT INTO users (name, email, password, role, status, is_email_verified, verification_status, created_at, updated_at)
+VALUES
+('Kenji Student', 'kenji@student.com', '<PASTE_HASH_HERE>', 'student', 'active', 1, 'approved', NOW(), NOW()),
+('Sakura Mentor', 'sakura@mentor.com', '<PASTE_HASH_HERE>', 'mentor', 'active', 1, 'approved', NOW(), NOW()),
+('Admin User', 'admin@system.com', '<PASTE_HASH_HERE>', 'admin', 'active', 1, 'approved', NOW(), NOW());
 ```
 
-3. Open your browser and visit:
+3. Add role records:
+
+```sql
+INSERT INTO students (user_id, roll_number, branch, year, college_id_path)
+SELECT id, 'CS2023001', 'CSE', 3, 'uploads/ids/student/demo.png'
+FROM users WHERE email = 'kenji@student.com';
+
+INSERT INTO mentors (user_id, company, position, expertise, job_id_path, verified_by_admin)
+SELECT id, 'Tech Corp', 'Senior Engineer', 'Web,Backend,Career', 'uploads/ids/mentor/demo.png', 1
+FROM users WHERE email = 'sakura@mentor.com';
 ```
-http://localhost:8000
-```
 
-## 🔑 Demo Credentials
+## API Endpoints
 
-All passwords are: **123456**
+- `api/auth.php`
+  - `login`
+  - `logout`
+  - `check`
+- `api/register.php`
+  - student/mentor registration + ID upload
+- `api/content.php`
+  - bootstrap content (blogs/questions/mentors/announcements)
+  - create blog/question/answer/mentorship request
+- `api/admin.php`
+  - admin bootstrap + moderation actions
 
-- **Student**: `student@demo.com`
-- **Mentor**: `mentor@demo.com`
-- **Admin**: `admin@demo.com`
+## Project Structure
 
-## 📁 Project Structure
-
-```
+```text
 community-blogs-php/
-├── index.php                 # Main entry point & layouts (SPA shell)
-├── config/
-│   ├── config.php           # Base URL & helper functions
-│   ├── session.php          # Authentication & session management
-│   └── mock-data.php        # Demo data arrays
-├── components/
-│   └── auth-modal.php       # Login/register modal
-├── data/
-│   ├── blogs.json           # Blog data (JSON)
-│   └── questions.json       # Question data (JSON)
-├── assets/
-│   ├── css/styles.css       # Custom styles
-│   └── js/
-│       ├── app.js           # SPA router & all views
-│       └── modal.js         # Auth modal functionality
-└── README.md
+|-- .htaccess
+|-- index.php
+|-- init_database.sql
+|-- README.md
+|-- api/
+|   |-- _common.php
+|   |-- auth.php
+|   |-- register.php
+|   |-- content.php
+|   |-- admin.php
+|-- assets/
+|   |-- css/styles.css
+|   |-- js/app.js
+|   |-- js/modal.js
+|   |-- js/db-integration.js
+|-- components/
+|   |-- auth-modal.php
+|-- config/
+|   |-- config.php
+|   |-- database.php
+|   |-- repository.php
+|   |-- session.php
+|-- logs/
+|   |-- .gitkeep
 ```
 
-## 🎨 Technology Stack
+## Troubleshooting
 
-- **PHP 8+** - Entry point, session management, auth modal
-- **Tailwind CSS** - Utility-first CSS framework (via CDN)
-- **Vanilla JavaScript** - SPA router & client-side rendering (app.js)
-- **No Database** - Mock data in JS objects and PHP arrays
+### 1) Invalid email or password
 
-## 📝 Current Status
+Check all of these:
 
-### All Phases: ✅ Complete
-- [x] Folder structure & configuration
-- [x] Mock data system
-- [x] Authentication (demo sessions)
-- [x] SPA Router (client-side navigation)
-- [x] Public pages (Home, Community, Blogs, Mentors, Blog Detail)
-- [x] Student pages (Dashboard, Community, Blogs, Mentorship, Profile, Chat)
-- [x] Mentor pages (Dashboard, Community, Blogs, Students, Profile, Chat)
-- [x] Admin pages (Dashboard, Blogs, Users, Community, Announcements)
+- Email exists in `users`
+- Password in DB is hashed (not plain text)
+- `status='active'`
+- `is_email_verified=1`
+- `verification_status='approved'`
 
-## 🔗 Routing
+### 2) Old/incorrect UI appears
 
-All pages use query parameters:
-- Home: `/?page=`
-- Community: `/?page=community`
-- Student Dashboard: `/?page=student/dashboard`
-- Admin Panel: `/?page=admin/dashboard`
+- Use `http://localhost/community-blogs-php/`
+- Avoid `localhost:5173`
+- Hard refresh browser: `Ctrl + F5`
 
-## 🛠️ Development
+### 3) Blank center page / shell loads only
 
-To stop the server, press `Ctrl+C` in the terminal.
+Run in browser console:
 
-To restart the server:
-```bash
-php -S localhost:8000
+```js
+localStorage.removeItem('demo_user');
+location.reload();
 ```
 
-## ⚠️ Important Notes
+### 4) Data not updating after DB edits
 
-- This is a **preview/demo only** - no real data persistence
-- No database required (XAMPP not needed)
-- All data resets when server restarts
-- Forms don't actually save data
-- For demonstration purposes only
-
-## 📊 Architecture
-
-This is a **Single Page Application (SPA)** built with vanilla JavaScript:
-- `index.php` serves as the shell (layouts, navigation, auth modal)
-- `assets/js/app.js` contains the SPA router and all view templates
-- Navigation is handled client-side via `history.pushState`
-- PHP handles session management and CSRF tokens only
-
-| Feature | Implementation |
-|---------|---------------|
-| Routing | Client-side SPA router (app.js) |
-| Views | JavaScript template literals |
-| Auth | Demo-mode via localStorage + PHP sessions |
-| Data | Hardcoded JS objects (mock data) |
-| Build | No build needed |
-| Server | `php -S localhost:8000` or XAMPP |
-
-## 🎓 Learning Resource
-
-This project demonstrates:
-- PHP session management
-- Server-side routing
-- Template-based rendering
-- Role-based access control
-- Mock data patterns
-
-## 📞 Support
-
-This is a community project. For issues or questions, refer to the implementation plan documentation.
-
----
-
-**Built with ❤️ as a PHP conversion of the React community-blogs platform**
+- Confirm you edited DB `community_blogs`
+- Refresh page after changes
+- API bootstrap reads live rows from MySQL (no JSON fallback)

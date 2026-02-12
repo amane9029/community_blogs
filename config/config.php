@@ -5,9 +5,46 @@
  * Defines base URL and helper functions for routing
  */
 
-// Define base URL for XAMPP subdirectory hosting
-// Change this if you move the project to a different location
-define('BASE_URL', '/community-blogs-php/');
+// Define base URL.
+// Order of precedence:
+// 1) BASE_URL environment variable
+// 2) Auto-detect from script path (works for /index.php and /api/*.php)
+if (!defined('BASE_URL')) {
+    $envBaseUrl = getenv('BASE_URL');
+    if (is_string($envBaseUrl) && $envBaseUrl !== '') {
+        $normalizedBaseUrl = '/' . trim(str_replace('\\', '/', $envBaseUrl), '/');
+        if ($normalizedBaseUrl !== '/') {
+            $normalizedBaseUrl .= '/';
+        }
+        define('BASE_URL', $normalizedBaseUrl);
+    } else {
+        $scriptName = str_replace('\\', '/', (string) ($_SERVER['SCRIPT_NAME'] ?? ''));
+        $detectedBase = preg_replace('#/(index\.php|api/[^/]+\.php)$#', '', $scriptName);
+        if (!is_string($detectedBase) || $detectedBase === '') {
+            define('BASE_URL', '/');
+        } else {
+            $detectedBase = '/' . trim($detectedBase, '/');
+            define('BASE_URL', $detectedBase . '/');
+        }
+    }
+}
+
+// Database configuration (override through environment variables in production)
+if (!defined('DB_HOST')) {
+    define('DB_HOST', getenv('DB_HOST') ?: 'localhost');
+}
+if (!defined('DB_PORT')) {
+    define('DB_PORT', (int) (getenv('DB_PORT') ?: 3306));
+}
+if (!defined('DB_NAME')) {
+    define('DB_NAME', getenv('DB_NAME') ?: 'community_blogs');
+}
+if (!defined('DB_USER')) {
+    define('DB_USER', getenv('DB_USER') ?: 'root');
+}
+if (!defined('DB_PASS')) {
+    define('DB_PASS', getenv('DB_PASS') ?: '');
+}
 
 /**
  * Generate a URL with the correct base path

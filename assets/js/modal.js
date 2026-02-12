@@ -2,7 +2,10 @@
 // Auth Modal — Multi-step Registration & Login
 // =============================================
 
-const AUTH_API = '/community-blogs-php/api/auth.php';
+const MODAL_APP_BASE_PATH = (window.APP_BASE_PATH || '/community-blogs-php/').toString();
+const MODAL_BASE_PATH = MODAL_APP_BASE_PATH.endsWith('/') ? MODAL_APP_BASE_PATH : `${MODAL_APP_BASE_PATH}/`;
+const MODAL_AUTH_API = `${MODAL_BASE_PATH}api/auth.php`;
+const MODAL_REGISTER_API = `${MODAL_BASE_PATH}api/register.php`;
 
 let currentRegRole = '';       // 'student' | 'mentor'
 let studentFile = null;
@@ -73,7 +76,7 @@ async function submitLogin() {
     btn.innerHTML = '<svg class="animate-spin h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path></svg> Signing in…';
 
     try {
-        const res = await fetch(AUTH_API, {
+        const res = await fetch(MODAL_AUTH_API, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'login', email, password })
@@ -85,6 +88,9 @@ async function submitLogin() {
             // Store user in localStorage for the SPA router
             localStorage.setItem('demo_user', JSON.stringify(data.user));
             router.user = data.user;
+            if (typeof refreshDbData === 'function') {
+                await refreshDbData(true);
+            }
             closeAuthModal();
             router.navigate(data.redirect);
         } else {
@@ -381,24 +387,74 @@ function removeFile(role) {
 
 // ------- Submit registration -------
 
-function submitStudentRegistration() {
+async function submitStudentRegistration() {
     hideFieldError('stu-file-err');
     if (!studentFile) {
         showFieldError('stu-file-err', 'Please upload your College ID card.');
         return;
     }
-    // Show success
-    showRegStep('success');
+
+    const name = document.getElementById('stu-name').value.trim();
+    const roll = document.getElementById('stu-roll').value.trim();
+    const email = document.getElementById('stu-email').value.trim();
+    const password = document.getElementById('stu-password').value;
+
+    const formData = new FormData();
+    formData.append('role', 'student');
+    formData.append('name', name);
+    formData.append('roll_number', roll);
+    formData.append('email', email);
+    formData.append('password', password);
+    formData.append('id_file', studentFile);
+
+    try {
+        const res = await fetch(MODAL_REGISTER_API, {
+            method: 'POST',
+            body: formData
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+            showFieldError('stu-file-err', data.error || 'Registration failed. Please try again.');
+            return;
+        }
+        showRegStep('success');
+    } catch (_) {
+        showFieldError('stu-file-err', 'Network error. Please try again.');
+    }
 }
 
-function submitMentorRegistration() {
+async function submitMentorRegistration() {
     hideFieldError('mnt-file-err');
     if (!mentorFile) {
         showFieldError('mnt-file-err', 'Please upload your Job / Company ID card.');
         return;
     }
-    // Show success
-    showRegStep('success');
+
+    const name = document.getElementById('mnt-name').value.trim();
+    const email = document.getElementById('mnt-email').value.trim();
+    const password = document.getElementById('mnt-password').value;
+
+    const formData = new FormData();
+    formData.append('role', 'mentor');
+    formData.append('name', name);
+    formData.append('email', email);
+    formData.append('password', password);
+    formData.append('id_file', mentorFile);
+
+    try {
+        const res = await fetch(MODAL_REGISTER_API, {
+            method: 'POST',
+            body: formData
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+            showFieldError('mnt-file-err', data.error || 'Registration failed. Please try again.');
+            return;
+        }
+        showRegStep('success');
+    } catch (_) {
+        showFieldError('mnt-file-err', 'Network error. Please try again.');
+    }
 }
 
 // ------- Reset -------

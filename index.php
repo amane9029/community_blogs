@@ -10,7 +10,11 @@ if ($debug_mode) {
     error_reporting(E_ALL);
     ini_set('display_errors', 0);
     ini_set('log_errors', 1);
-    ini_set('error_log', __DIR__ . '/logs/error.log');
+    $logDir = __DIR__ . '/logs';
+    if (!is_dir($logDir)) {
+        @mkdir($logDir, 0775, true);
+    }
+    ini_set('error_log', $logDir . '/error.log');
 }
 
 session_start();
@@ -111,6 +115,9 @@ if ($page) {
             background-color: #1f2937;
         }
     </style>
+    <script>
+        window.APP_BASE_PATH = <?= json_encode(BASE_URL, JSON_UNESCAPED_SLASHES) ?>;
+    </script>
 </head>
 
 <body class="bg-gray-50 text-gray-900"<?php if (isset($_SESSION['redirect_path'])): ?> data-redirect-path="<?php echo htmlspecialchars($_SESSION['redirect_path']); ?>"<?php unset($_SESSION['redirect_path']); endif; ?>>
@@ -404,6 +411,7 @@ if ($page) {
 
     <script src="<?= BASE_URL ?>assets/js/modal.js"></script>
     <script src="<?= BASE_URL ?>assets/js/app.js"></script>
+    <script src="<?= BASE_URL ?>assets/js/db-integration.js"></script>
 </body>
 
 </html>
