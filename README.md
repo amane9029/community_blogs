@@ -46,6 +46,16 @@ Database-driven community platform for students, mentors, and admins.
 
 > **Manual import (optional):** If auto-setup fails, open phpMyAdmin, create DB `community_blogs`, and import `init_database.sql`.
 
+## Troubleshooting
+
+### Stats show 0 / No data on homepage
+
+If the homepage shows all zeros and "No announcements available", the seed data was not imported:
+
+1. **Easiest fix:** Visit `http://localhost/community-blogs-php/setup.php?force` — this re-imports the database with all seed data.
+2. **Alternative:** In phpMyAdmin, drop the `community_blogs` database, then reload the app — setup runs automatically.
+3. **Manual import:** In phpMyAdmin, select the `community_blogs` database → Import → choose `init_database.sql` → Go.
+
 ## Database Configuration
 
 Defaults come from `config/config.php`:

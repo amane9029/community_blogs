@@ -23,17 +23,20 @@ function isDatabaseReady(): bool
             return false;
         }
 
-        // Check if the users table exists (core table)
         $pdo->exec('USE `' . DB_NAME . '`');
+
+        // Check if core tables exist
         $stmt = $pdo->query("SHOW TABLES LIKE 'users'");
         if ($stmt->rowCount() === 0) {
             return false;
         }
 
-        // Check that seed data actually exists (at least one user)
-        $countStmt = $pdo->query('SELECT COUNT(*) FROM users');
-        $userCount = (int) $countStmt->fetchColumn();
-        if ($userCount === 0) {
+        // Verify seed data was imported: check multiple tables for data.
+        // If tables exist but are empty (or only have manually-created users),
+        // seed data was not imported — need to re-run setup.
+        $studentCount = (int) $pdo->query('SELECT COUNT(*) FROM students')->fetchColumn();
+        $mentorCount  = (int) $pdo->query('SELECT COUNT(*) FROM mentors')->fetchColumn();
+        if ($studentCount === 0 && $mentorCount === 0) {
             return false;
         }
 
@@ -127,10 +130,13 @@ function runSetup(): array
 if (php_sapi_name() !== 'cli' && realpath($_SERVER['SCRIPT_FILENAME']) === realpath(__FILE__)) {
     header('Content-Type: text/html; charset=utf-8');
 
-    if (isDatabaseReady()) {
+    $forceReset = isset($_GET['force']);
+
+    if (!$forceReset && isDatabaseReady()) {
         echo '<!DOCTYPE html><html><head><title>Setup</title></head><body style="font-family:sans-serif;padding:40px;text-align:center;">';
         echo '<h2 style="color:green;">&#10003; Database is already set up!</h2>';
         echo '<p>Everything is ready. <a href="' . htmlspecialchars(BASE_URL) . '">Open the app</a></p>';
+        echo '<p style="margin-top:20px;"><a href="?force" style="color:#c00;" onclick="return confirm(\'This will reset the database and re-import all seed data. Continue?\')">&#x21bb; Force re-import seed data</a></p>';
         echo '</body></html>';
         exit;
     }
