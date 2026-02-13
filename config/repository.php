@@ -419,9 +419,16 @@ function repo_fetch_question_by_id($questionId)
     try {
         $pdo = repo_db();
         $stmt = $pdo->prepare(
-            'SELECT q.id, q.title, q.content, q.author_id, q.views, q.created_at
+            'SELECT
+                q.id, q.title, q.content, q.author_id, q.views, q.created_at,
+                u.name AS author_name, u.role AS author_role, u.avatar AS author_avatar,
+                COUNT(a.id) AS answers_count,
+                MAX(CASE WHEN a.is_verified = 1 THEN 1 ELSE 0 END) AS has_verified_answer
              FROM questions q
+             LEFT JOIN users u ON u.id = q.author_id
+             LEFT JOIN answers a ON a.question_id = q.id
              WHERE q.id = :id
+             GROUP BY q.id, q.title, q.content, q.author_id, q.views, q.created_at, u.name, u.role, u.avatar
              LIMIT 1'
         );
         $stmt->execute([':id' => (int) $questionId]);
@@ -430,6 +437,44 @@ function repo_fetch_question_by_id($questionId)
     } catch (Throwable $e) {
         error_log('repo_fetch_question_by_id failed: ' . $e->getMessage());
         return null;
+    }
+}
+
+function repo_fetch_answers_by_question($questionId)
+{
+    try {
+        $pdo = repo_db();
+        $stmt = $pdo->prepare(
+            'SELECT
+                a.id, a.question_id, a.author_id, a.content, a.is_verified, a.created_at,
+                u.name AS author_name, u.role AS author_role, u.avatar AS author_avatar
+             FROM answers a
+             LEFT JOIN users u ON u.id = a.author_id
+             WHERE a.question_id = :question_id
+             ORDER BY a.is_verified DESC, a.created_at ASC'
+        );
+        $stmt->execute([':question_id' => (int) $questionId]);
+        return $stmt->fetchAll();
+    } catch (Throwable $e) {
+        error_log('repo_fetch_answers_by_question failed: ' . $e->getMessage());
+        return [];
+    }
+}
+
+function repo_increment_question_views($questionId)
+{
+    try {
+        $pdo = repo_db();
+        $stmt = $pdo->prepare(
+            'UPDATE questions
+             SET views = COALESCE(views, 0) + 1
+             WHERE id = :id'
+        );
+        $stmt->execute([':id' => (int) $questionId]);
+        return $stmt->rowCount() > 0;
+    } catch (Throwable $e) {
+        error_log('repo_increment_question_views failed: ' . $e->getMessage());
+        return false;
     }
 }
 

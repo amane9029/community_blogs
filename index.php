@@ -409,9 +409,9 @@ if ($page) {
         </div>
     </div>
 
-    <script src="<?= BASE_URL ?>assets/js/modal.js"></script>
-    <script src="<?= BASE_URL ?>assets/js/app.js"></script>
-    <script src="<?= BASE_URL ?>assets/js/db-integration.js"></script>
+    <script src="<?= BASE_URL ?>assets/js/modal.js?v=<?= (int) @filemtime(__DIR__ . '/assets/js/modal.js') ?>"></script>
+    <script src="<?= BASE_URL ?>assets/js/app.js?v=<?= (int) @filemtime(__DIR__ . '/assets/js/app.js') ?>"></script>
+    <script src="<?= BASE_URL ?>assets/js/db-integration.js?v=<?= (int) @filemtime(__DIR__ . '/assets/js/db-integration.js') ?>"></script>
 </body>
 
 </html>

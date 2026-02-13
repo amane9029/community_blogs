@@ -3,6 +3,7 @@
 const APP_BASE_PATH = (window.APP_BASE_PATH || '/community-blogs-php/').toString();
 const BASE_PATH = APP_BASE_PATH.endsWith('/') ? APP_BASE_PATH : `${APP_BASE_PATH}/`;
 const AUTH_API = `${BASE_PATH}api/auth.php`;
+const CONTENT_API = `${BASE_PATH}api/content.php`;
 
 // Utility: escape a string for use in HTML attributes
 function escapeAttr(str) {
@@ -201,6 +202,9 @@ const router = {
                 if (path.startsWith('/blogs/')) {
                     const blogId = path.split('/')[2];
                     html = this.views.blogDetail(blogId);
+                } else if (path.startsWith('/question/')) {
+                    const questionId = path.split('/')[2];
+                    html = this.views.questionDetail(questionId);
                 } else {
                     html = this.views.notFound();
                 }
@@ -471,8 +475,10 @@ const router = {
                                     <div class="flex items-start justify-between">
                                         <div class="flex-1">
                                             <div class="flex items-center space-x-2 mb-2">
-                                                <h3 class="text-lg font-semibold text-gray-900 hover:text-primary-600 cursor-pointer">
-                                                    ${question.title}
+                                                <h3 class="text-lg font-semibold text-gray-900">
+                                                    <button type="button" onclick="openQuestionDetail(${Number(question.id) || 0})" class="text-left hover:text-primary-600 transition-colors cursor-pointer">
+                                                        ${question.title}
+                                                    </button>
                                                 </h3>
                                                 ${question.verified ? `
                                                     <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-success-100 text-success-600">
@@ -486,7 +492,9 @@ const router = {
                                             <div class="flex items-center space-x-4 text-sm text-gray-500 mb-3">
                                                 <span>By ${question.author || 'Unknown'}</span>
                                                 <span>&bull;</span>
-                                                <span>${question.answers || 0} answers</span>
+                                                <button type="button" onclick="openQuestionDetail(${Number(question.id) || 0})" class="hover:text-primary-600 transition-colors">
+                                                    ${question.answers || 0} answers
+                                                </button>
                                                 <span>&bull;</span>
                                                 <span>${question.views || 0} views</span>
                                             </div>
@@ -680,8 +688,10 @@ const router = {
                                     <!-- Content -->
                                     <div class="flex-1">
                                         <div class="flex items-start justify-between mb-2">
-                                            <h3 class="text-lg font-semibold text-gray-900 hover:text-primary-600 cursor-pointer">
-                                                ${question.title}
+                                            <h3 class="text-lg font-semibold text-gray-900">
+                                                <button type="button" onclick="openQuestionDetail(${Number(question.id) || 0})" class="text-left hover:text-primary-600 cursor-pointer">
+                                                    ${question.title}
+                                                </button>
                                             </h3>
                                             ${question.verified ? `
                                                 <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-success-100 text-success-600 ml-2 flex-shrink-0">
@@ -727,12 +737,12 @@ const router = {
                                             </div>
 
                                             <div class="flex items-center space-x-4 text-sm text-gray-500">
-                                                <span class="flex items-center">
+                                                <button type="button" onclick="openQuestionDetail(${Number(question.id) || 0})" class="flex items-center hover:text-primary-600 transition-colors">
                                                     <svg class="h-4 w-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
                                                     </svg>
                                                     ${question.answers} answers
-                                                </span>
+                                                </button>
                                                 <span class="flex items-center">
                                                     <svg class="h-4 w-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
@@ -1240,6 +1250,124 @@ const router = {
                             ${relatedBlogs.map(related => '<a href="javascript:void(0)" onclick="event.preventDefault(); router.navigate(\'/blogs/' + related.id + '\')" class="card p-4 hover:shadow-md transition-shadow block"><h4 class="font-semibold text-gray-900 mb-2 hover:text-primary-600">' + related.title + '</h4><div class="flex items-center justify-between text-sm text-gray-500"><span>' + related.author + '</span><span class="flex items-center"><svg class="h-3 w-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>' + related.readTime + '</span></div></a>').join('')}
                         </div>
                     </div>
+                </div>
+            `;
+        },
+
+        questionDetail(id) {
+            const questionId = Number(id);
+            if (!Number.isInteger(questionId) || questionId <= 0) {
+                return this.notFound();
+            }
+
+            const stateKey = String(questionId);
+            const state = questionDetailState[stateKey] || {};
+            const fallbackQuestion = getQuestionSummaryById(questionId);
+            const question = state.question || fallbackQuestion;
+            const answers = Array.isArray(state.answers) ? state.answers : [];
+
+            if (!state.loading && !state.loaded && !state.error) {
+                fetchQuestionDetail(questionId);
+            }
+
+            const authorName = question ? (question.author || 'Anonymous') : 'Anonymous';
+            const authorRole = question ? (question.authorRole || 'Student') : 'Student';
+            const authorAvatar = question ? (question.avatar || String(authorName).charAt(0).toUpperCase()) : 'A';
+            const postedTime = question ? (question.timeAgo || question.date || '') : '';
+            const answerCount = question ? (Number(question.answers) || answers.length) : answers.length;
+            const viewCount = question ? (Number(question.views) || 0) : 0;
+
+            return `
+                <div class="max-w-5xl mx-auto space-y-6">
+                    <button onclick="event.preventDefault(); router.navigate('/community')" class="inline-flex items-center text-gray-600 hover:text-primary-600">
+                        <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m12 19-7-7 7-7"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 12H5"/></svg>
+                        Back to Community
+                    </button>
+
+                    ${state.error ? `
+                        <div class="bg-white rounded-lg shadow-sm border border-red-200 p-6">
+                            <h1 class="text-xl font-semibold text-red-700">Unable to load question</h1>
+                            <p class="text-sm text-red-600 mt-2">${escapeAttr(state.error)}</p>
+                            <button onclick="retryQuestionDetailLoad(${questionId})" class="mt-4 px-4 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 transition-colors">Try Again</button>
+                        </div>
+                    ` : ''}
+
+                    ${question ? `
+                        <section class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 md:p-8">
+                            <div class="flex items-start justify-between gap-3">
+                                <h1 class="text-2xl md:text-3xl font-bold text-gray-900">${escapeAttr(question.title || 'Untitled question')}</h1>
+                                ${question.verified ? `
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium bg-success-100 text-success-600">
+                                        <svg class="h-3 w-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                                        Verified
+                                    </span>
+                                ` : ''}
+                            </div>
+
+                            <div class="mt-4 flex flex-wrap items-center gap-4 text-sm text-gray-500">
+                                <span class="inline-flex items-center">
+                                    <span class="h-7 w-7 rounded-full bg-primary-100 text-primary-700 text-xs font-semibold flex items-center justify-center mr-2">${escapeAttr(authorAvatar)}</span>
+                                    ${escapeAttr(authorName)}
+                                </span>
+                                <span>${escapeAttr(authorRole)}</span>
+                                <span>${answerCount} answers</span>
+                                <span>${viewCount} views</span>
+                                ${postedTime ? `<span>${escapeAttr(postedTime)}</span>` : ''}
+                            </div>
+
+                            <div class="mt-5 text-gray-700 leading-relaxed whitespace-pre-wrap">${formatMultilineText(question.content || '')}</div>
+                        </section>
+
+                        <section class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 md:p-8">
+                            <div class="flex items-center justify-between mb-4">
+                                <h2 class="text-xl font-semibold text-gray-900">Answers (${answers.length})</h2>
+                                ${state.loading ? '<span class="text-xs text-gray-500">Refreshing...</span>' : ''}
+                            </div>
+
+                            <div class="space-y-4">
+                                ${answers.length ? answers.map((answer) => `
+                                    <article class="border border-gray-200 rounded-lg p-4">
+                                        <div class="flex flex-wrap items-center gap-3 text-sm text-gray-500">
+                                            <span class="inline-flex items-center font-medium text-gray-900">
+                                                <span class="h-6 w-6 rounded-full bg-gray-100 text-gray-700 text-xs font-semibold flex items-center justify-center mr-2">${escapeAttr(answer.avatar || String(answer.author || 'A').charAt(0).toUpperCase())}</span>
+                                                ${escapeAttr(answer.author || 'Anonymous')}
+                                            </span>
+                                            <span>${escapeAttr(answer.authorRole || 'Student')}</span>
+                                            <span>${escapeAttr(answer.timeAgo || answer.date || '')}</span>
+                                            ${answer.isVerified ? '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-success-100 text-success-600">Verified</span>' : ''}
+                                        </div>
+                                        <div class="mt-3 text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">${formatMultilineText(answer.content || '')}</div>
+                                    </article>
+                                `).join('') : `
+                                    <div class="border border-gray-200 rounded-lg p-4 text-sm text-gray-600">
+                                        No answers yet. Be the first to answer this question.
+                                    </div>
+                                `}
+                            </div>
+                        </section>
+
+                        <section class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 md:p-8">
+                            <h2 class="text-lg font-semibold text-gray-900 mb-3">Your Answer</h2>
+                            ${router.user ? `
+                                <textarea id="question-answer-input-${questionId}" placeholder="Write a helpful answer..." class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500" rows="5"></textarea>
+                                <p id="question-answer-error-${questionId}" class="hidden mt-2 text-sm text-red-600"></p>
+                                <div class="mt-3 flex justify-end">
+                                    <button id="question-answer-submit-${questionId}" onclick="submitQuestionAnswer(${questionId}, event)" class="px-4 py-2 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700 transition-colors">
+                                        Post Answer
+                                    </button>
+                                </div>
+                            ` : `
+                                <p class="text-sm text-gray-600">You need to sign in to post an answer.</p>
+                                <button onclick="openAuthModal('login')" class="mt-3 px-4 py-2 border border-primary-600 text-primary-600 rounded-lg font-medium hover:bg-primary-50 transition-colors">
+                                    Login to Answer
+                                </button>
+                            `}
+                        </section>
+                    ` : `
+                        <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 text-sm text-gray-600">
+                            ${state.loading ? 'Loading question details...' : 'Question not found.'}
+                        </div>
+                    `}
                 </div>
             `;
         },
@@ -3474,6 +3602,178 @@ function handleChatSend(inputId) {
     }
     input.value = '';
 }
+
+const questionDetailState = {};
+
+function formatMultilineText(value) {
+    return escapeAttr(value == null ? '' : String(value)).replace(/\r?\n/g, '<br>');
+}
+
+function getQuestionSummaryById(questionId) {
+    const questions = Array.isArray(router.dbData && router.dbData.questions) ? router.dbData.questions : [];
+    return questions.find((q) => Number(q.id) === Number(questionId)) || null;
+}
+
+async function postContentJSON(payload) {
+    if (typeof window.apiPostJSON === 'function') {
+        return window.apiPostJSON(CONTENT_API, payload);
+    }
+
+    const response = await fetch(CONTENT_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+
+    let data = {};
+    try {
+        data = await response.json();
+    } catch (_) {
+        throw new Error('Invalid API response.');
+    }
+
+    if (!response.ok || data.success === false) {
+        throw new Error(data.error || 'Request failed.');
+    }
+
+    return data;
+}
+
+async function fetchQuestionDetail(questionId, force = false) {
+    const normalizedId = Number(questionId);
+    if (!Number.isInteger(normalizedId) || normalizedId <= 0) {
+        return;
+    }
+
+    const key = String(normalizedId);
+    const current = questionDetailState[key] || {};
+    if (!force && current.loading) {
+        return;
+    }
+    if (!force && current.loaded) {
+        return;
+    }
+
+    questionDetailState[key] = {
+        ...current,
+        loading: true,
+        loaded: false,
+        error: null
+    };
+
+    try {
+        const data = await postContentJSON({
+            action: 'get_question_detail',
+            question_id: normalizedId
+        });
+        questionDetailState[key] = {
+            loading: false,
+            loaded: true,
+            error: null,
+            question: data.question || null,
+            answers: Array.isArray(data.answers) ? data.answers : []
+        };
+    } catch (error) {
+        questionDetailState[key] = {
+            ...current,
+            loading: false,
+            loaded: false,
+            error: (error && error.message) ? error.message : 'Failed to load question details.'
+        };
+    }
+
+    if (router.currentPath === `/question/${normalizedId}`) {
+        router.render();
+    }
+}
+
+window.openQuestionDetail = function (questionId) {
+    const normalizedId = Number(questionId);
+    if (!Number.isInteger(normalizedId) || normalizedId <= 0) {
+        return;
+    }
+    router.navigate(`/question/${normalizedId}`);
+    fetchQuestionDetail(normalizedId, true);
+};
+
+window.retryQuestionDetailLoad = function (questionId) {
+    fetchQuestionDetail(Number(questionId), true);
+};
+
+window.submitQuestionAnswer = async function (questionId, event) {
+    if (event && typeof event.preventDefault === 'function') {
+        event.preventDefault();
+    }
+
+    if (!router.user) {
+        if (typeof openAuthModal === 'function') {
+            openAuthModal('login');
+        }
+        return;
+    }
+
+    const normalizedId = Number(questionId);
+    if (!Number.isInteger(normalizedId) || normalizedId <= 0) {
+        return;
+    }
+
+    const textarea = document.getElementById(`question-answer-input-${normalizedId}`);
+    const errorEl = document.getElementById(`question-answer-error-${normalizedId}`);
+    const submitBtn = document.getElementById(`question-answer-submit-${normalizedId}`);
+    if (!textarea || !submitBtn) {
+        return;
+    }
+
+    const content = String(textarea.value || '').trim();
+    if (errorEl) {
+        errorEl.textContent = '';
+        errorEl.classList.add('hidden');
+    }
+
+    if (content.length < 8) {
+        if (errorEl) {
+            errorEl.textContent = 'Answer must be at least 8 characters.';
+            errorEl.classList.remove('hidden');
+        }
+        return;
+    }
+
+    submitBtn.disabled = true;
+    const idleLabel = submitBtn.textContent;
+    submitBtn.innerHTML = '<span class="inline-flex items-center"><svg class="mr-2 h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path></svg>Posting...</span>';
+
+    try {
+        await postContentJSON({
+            action: 'create_answer',
+            question_id: normalizedId,
+            content
+        });
+
+        textarea.value = '';
+        if (typeof refreshDbData === 'function') {
+            try {
+                await refreshDbData(true);
+            } catch (_) {
+                // Ignore bootstrap refresh failures and continue.
+            }
+        }
+        await fetchQuestionDetail(normalizedId, true);
+        if (typeof showFeatureNotice === 'function') {
+            showFeatureNotice('Answer posted successfully.');
+        }
+    } catch (error) {
+        const message = (error && error.message) ? error.message : 'Failed to submit answer.';
+        if (errorEl) {
+            errorEl.textContent = message;
+            errorEl.classList.remove('hidden');
+        } else if (typeof showFeatureNotice === 'function') {
+            showFeatureNotice(message);
+        }
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = idleLabel || 'Post Answer';
+    }
+};
 
 // Initialize router when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {

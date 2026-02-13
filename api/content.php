@@ -68,6 +68,26 @@ function content_map_question($row)
     ];
 }
 
+function content_map_answer($row)
+{
+    $authorName = $row['author_name'] ?? 'Anonymous';
+    $verified = ((int) ($row['is_verified'] ?? 0)) === 1;
+
+    return [
+        'id' => (int) ($row['id'] ?? 0),
+        'questionId' => isset($row['question_id']) ? (int) $row['question_id'] : null,
+        'authorId' => isset($row['author_id']) ? (int) $row['author_id'] : null,
+        'author' => $authorName,
+        'authorRole' => content_role_label($row['author_role'] ?? ''),
+        'avatar' => strtoupper(substr($authorName, 0, 1)),
+        'content' => $row['content'] ?? '',
+        'isVerified' => $verified,
+        'createdAt' => $row['created_at'] ?? null,
+        'date' => repo_datetime_to_display($row['created_at'] ?? null),
+        'timeAgo' => repo_time_ago($row['created_at'] ?? null),
+    ];
+}
+
 function content_map_mentor($row)
 {
     $name = $row['name'] ?? 'Mentor';
@@ -148,6 +168,28 @@ if ($action === 'search') {
         'blogs' => array_map('content_map_blog', $results['blogs'] ?? []),
         'questions' => array_map('content_map_question', $results['questions'] ?? []),
         'mentors' => array_map('content_map_mentor', $results['mentors'] ?? []),
+    ]);
+}
+
+if ($action === 'get_question_detail') {
+    $questionId = (int) ($input['question_id'] ?? 0);
+    if ($questionId <= 0) {
+        api_json_response(['success' => false, 'error' => 'Invalid question id.'], 400);
+    }
+
+    $question = repo_fetch_question_by_id($questionId);
+    if (!$question) {
+        api_json_response(['success' => false, 'error' => 'Question not found.'], 404);
+    }
+
+    repo_increment_question_views($questionId);
+    $question = repo_fetch_question_by_id($questionId) ?: $question;
+    $answers = repo_fetch_answers_by_question($questionId);
+
+    api_json_response([
+        'success' => true,
+        'question' => content_map_question($question),
+        'answers' => array_map('content_map_answer', $answers),
     ]);
 }
 
