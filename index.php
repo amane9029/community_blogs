@@ -20,6 +20,13 @@ if ($debug_mode) {
 session_start();
 require_once __DIR__ . '/config/config.php';
 
+// Auto-setup: redirect to setup.php if the database hasn't been created yet
+require_once __DIR__ . '/setup.php';
+if (!isDatabaseReady()) {
+    header('Location: ' . BASE_URL . 'setup.php');
+    exit;
+}
+
 // Handle ?page= parameter for PHP-based routing (from login redirects)
 $page = $_GET['page'] ?? '';
 if ($page) {

@@ -32,15 +32,19 @@ Database-driven community platform for students, mentors, and admins.
 - Apache
 - MySQL
 
-3. Import database schema:
-- Open phpMyAdmin
-- Create/select DB `community_blogs`
-- Import file: `init_database.sql`
-
-4. Open app:
+3. Open the app:
 - `http://localhost/community-blogs-php/`
+- **The database is created automatically on first visit.** You will see a setup page confirming the import.
 
-Do not use `http://localhost:5173` for this PHP app.
+4. Log in with any demo account:
+
+| Role | Email | Password |
+|------|-------|----------|
+| Student | kenji@student.com | 123456 |
+| Mentor | sakura@mentor.com | 123456 |
+| Admin | admin@system.com | 123456 |
+
+> **Manual import (optional):** If auto-setup fails, open phpMyAdmin, create DB `community_blogs`, and import `init_database.sql`.
 
 ## Database Configuration
 

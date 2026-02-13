@@ -1,0 +1,11 @@
+# Runtime files
+logs/*.log
+student.cookies.txt
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
