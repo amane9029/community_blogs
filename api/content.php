@@ -135,12 +135,15 @@ if ($action === 'bootstrap' || $action === 'public_data') {
     $mentors = array_map('content_map_mentor', repo_fetch_mentors());
     $announcements = array_map('content_map_announcement', repo_fetch_announcements());
 
+    $studentCount = repo_count_active_students();
+
     $response = [
         'success' => true,
         'blogs' => $blogs,
         'questions' => $questions,
         'mentors' => $mentors,
         'announcements' => $announcements,
+        'student_count' => $studentCount,
     ];
 
     if (isLoggedIn()) {

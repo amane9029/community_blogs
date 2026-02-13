@@ -320,6 +320,8 @@ const router = {
             const blogs = this.getSampleBlogs().slice(0, 2);
             const mentors = this.getSampleMentors();
             const totalAnswers = this.getSampleQuestions().reduce((sum, q) => sum + (Number(q.answers) || 0), 0);
+            const studentCount = (router.dbData && router.dbData.studentCount) || 0;
+            const contentError = (router.dbData && router.dbData.errors && router.dbData.errors.content) || '';
 
             return `
                 <div class="space-y-12">
@@ -329,6 +331,7 @@ const router = {
                             <h1 class="text-4xl md:text-5xl font-bold text-gray-900 mb-6">
                                 Your Career Journey Starts Here
                             </h1>
+                            ${contentError ? `<div class="max-w-2xl mx-auto mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700" id="home-api-error"><strong>Data load error:</strong> ${contentError}. Check that Apache &amp; MySQL are running and <a href="setup.php" class="underline font-medium">re-run setup</a> if needed.</div>` : ''}
                             <p class="text-xl text-gray-600 mb-8">
                                 Connect with mentors, access career guidance, and join a community of learners
                                 dedicated to helping you succeed in your professional journey.
@@ -354,21 +357,21 @@ const router = {
                             <div id="home-search-results" class="hidden max-w-4xl mx-auto text-left"></div>
 
                             <!-- Stats -->
-                            <div class="grid grid-cols-2 md:grid-cols-4 gap-6 max-w-3xl mx-auto">
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-6 max-w-3xl mx-auto" id="home-stats">
                                 <div class="text-center">
-                                    <div class="text-3xl font-bold text-primary-600">${this.getSampleQuestions().length.toLocaleString()}</div>
+                                    <div class="text-3xl font-bold text-primary-600" data-stat="students">${studentCount.toLocaleString()}</div>
                                     <div class="text-sm text-gray-600">Active Students</div>
                                 </div>
                                 <div class="text-center">
-                                    <div class="text-3xl font-bold text-primary-600">${mentors.length.toLocaleString()}</div>
+                                    <div class="text-3xl font-bold text-primary-600" data-stat="mentors">${mentors.length.toLocaleString()}</div>
                                     <div class="text-sm text-gray-600">Expert Mentors</div>
                                 </div>
                                 <div class="text-center">
-                                    <div class="text-3xl font-bold text-primary-600">${this.getSampleBlogs().length.toLocaleString()}</div>
+                                    <div class="text-3xl font-bold text-primary-600" data-stat="blogs">${this.getSampleBlogs().length.toLocaleString()}</div>
                                     <div class="text-sm text-gray-600">Career Blogs</div>
                                 </div>
                                 <div class="text-center">
-                                    <div class="text-3xl font-bold text-primary-600">${totalAnswers.toLocaleString()}</div>
+                                    <div class="text-3xl font-bold text-primary-600" data-stat="answers">${totalAnswers.toLocaleString()}</div>
                                     <div class="text-sm text-gray-600">Questions Answered</div>
                                 </div>
                             </div>

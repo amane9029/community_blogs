@@ -32,6 +32,7 @@
         adminBlogs: [],
         adminUsers: [],
         announcements: [],
+        studentCount: 0,
         errors: { content: null, admin: null },
         lastFetchedAt: 0
     };
@@ -438,6 +439,7 @@
             router.dbData.questions = normalizeArray(contentData.questions);
             router.dbData.mentors = normalizeArray(contentData.mentors);
             router.dbData.mentorshipRequests = normalizeArray(contentData.mentorship_requests);
+            router.dbData.studentCount = Number(contentData.student_count) || 0;
             if (role !== 'admin') {
                 router.dbData.announcements = normalizeArray(contentData.announcements);
             }
@@ -447,6 +449,7 @@
             router.dbData.questions = [];
             router.dbData.mentors = [];
             router.dbData.mentorshipRequests = [];
+            router.dbData.studentCount = 0;
             if (role !== 'admin') {
                 router.dbData.announcements = [];
             }
@@ -476,6 +479,20 @@
 
     window.refreshDbData = refreshDbData;
 
+    function updateHomeStats() {
+        const studentsEl = document.querySelector('[data-stat="students"]');
+        const mentorsEl = document.querySelector('[data-stat="mentors"]');
+        const blogsEl = document.querySelector('[data-stat="blogs"]');
+        const answersEl = document.querySelector('[data-stat="answers"]');
+        if (studentsEl) studentsEl.textContent = formatCount(router.dbData.studentCount || 0);
+        if (mentorsEl) mentorsEl.textContent = formatCount(normalizeArray(router.dbData.mentors).length);
+        if (blogsEl) blogsEl.textContent = formatCount(normalizeArray(router.dbData.blogs).length);
+        if (answersEl) {
+            const total = normalizeArray(router.dbData.questions).reduce(function (sum, q) { return sum + (Number(q.answers) || 0); }, 0);
+            answersEl.textContent = formatCount(total);
+        }
+    }
+
     const baseRender = router.render.bind(router);
     router.render = function () {
         baseRender();
@@ -487,11 +504,12 @@
 
         router.__dbLoading = true;
         refreshDbData(false)
-            .catch(() => {})
+            .catch(function (err) { console.error('refreshDbData failed:', err); })
             .finally(() => {
                 router.__dbLoading = false;
                 baseRender();
                 wirePassiveButtons();
+                updateHomeStats();
             });
     };
 

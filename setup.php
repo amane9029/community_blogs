@@ -26,7 +26,18 @@ function isDatabaseReady(): bool
         // Check if the users table exists (core table)
         $pdo->exec('USE `' . DB_NAME . '`');
         $stmt = $pdo->query("SHOW TABLES LIKE 'users'");
-        return $stmt->rowCount() > 0;
+        if ($stmt->rowCount() === 0) {
+            return false;
+        }
+
+        // Check that seed data actually exists (at least one user)
+        $countStmt = $pdo->query('SELECT COUNT(*) FROM users');
+        $userCount = (int) $countStmt->fetchColumn();
+        if ($userCount === 0) {
+            return false;
+        }
+
+        return true;
     } catch (PDOException $e) {
         return false;
     }
@@ -47,8 +58,14 @@ function runSetup(): array
 
         $sql = file_get_contents($sqlFile);
 
-        // PDO::exec cannot run multiple statements, so use multi_query via mysqli
-        // or split and execute. We'll use mysqli for reliable multi-statement import.
+        // Split SQL into core statements and migration (PREPARE/EXECUTE) block.
+        // multi_query can choke on dynamic SQL, so we run them separately.
+        $migrationMarker = '-- Migration:';
+        $markerPos = strpos($sql, $migrationMarker);
+        $coreSql = $markerPos !== false ? substr($sql, 0, $markerPos) : $sql;
+        $migrationSql = $markerPos !== false ? substr($sql, $markerPos) : '';
+
+        // Use mysqli for reliable multi-statement import.
         $mysqli = new mysqli(DB_HOST, DB_USER, DB_PASS, '', DB_PORT);
         if ($mysqli->connect_error) {
             return ['success' => false, 'message' => 'MySQL connection failed: ' . $mysqli->connect_error];
@@ -56,27 +73,51 @@ function runSetup(): array
 
         $mysqli->set_charset('utf8mb4');
 
-        if (!$mysqli->multi_query($sql)) {
+        // Step 1: Run core SQL (schema + seed data)
+        if (!$mysqli->multi_query($coreSql)) {
             $err = $mysqli->error;
             $mysqli->close();
             return ['success' => false, 'message' => 'SQL import failed: ' . $err];
         }
 
-        // Consume all result sets
+        // Consume all result sets from core SQL
         do {
             if ($result = $mysqli->store_result()) {
                 $result->free();
             }
         } while ($mysqli->next_result());
 
-        $finalError = $mysqli->error;
-        $mysqli->close();
+        $coreError = $mysqli->error;
 
-        if ($finalError) {
-            return ['success' => false, 'message' => 'SQL import warning: ' . $finalError];
+        // Step 2: Run migration SQL separately (PREPARE/EXECUTE)
+        $migrationWarning = '';
+        if ($migrationSql !== '' && !$coreError) {
+            if (!$mysqli->multi_query($migrationSql)) {
+                $migrationWarning = $mysqli->error;
+            } else {
+                do {
+                    if ($result = $mysqli->store_result()) {
+                        $result->free();
+                    }
+                } while ($mysqli->next_result());
+                if ($mysqli->error) {
+                    $migrationWarning = $mysqli->error;
+                }
+            }
         }
 
-        return ['success' => true, 'message' => 'Database created and seed data imported successfully.'];
+        $mysqli->close();
+
+        if ($coreError) {
+            return ['success' => false, 'message' => 'SQL import failed: ' . $coreError];
+        }
+
+        $msg = 'Database created and seed data imported successfully.';
+        if ($migrationWarning) {
+            $msg .= ' (Migration note: ' . $migrationWarning . ')';
+        }
+
+        return ['success' => true, 'message' => $msg];
     } catch (Exception $e) {
         return ['success' => false, 'message' => 'Setup error: ' . $e->getMessage()];
     }

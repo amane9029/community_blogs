@@ -885,6 +885,22 @@ function repo_fetch_admin_blogs()
     return repo_fetch_blogs(null);
 }
 
+function repo_count_active_students()
+{
+    try {
+        $pdo = repo_db();
+        $stmt = $pdo->query(
+            'SELECT COUNT(*) FROM students s
+             INNER JOIN users u ON u.id = s.user_id
+             WHERE u.status = \'active\''
+        );
+        return (int) $stmt->fetchColumn();
+    } catch (Throwable $e) {
+        error_log('repo_count_active_students failed: ' . $e->getMessage());
+        return 0;
+    }
+}
+
 function repo_fetch_announcements()
 {
     try {
