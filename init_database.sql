@@ -212,76 +212,6 @@ INSERT INTO `announcements` (`id`, `title`, `content`, `created_by`, `created_at
 (2, 'New Mentors Onboarded', 'We have added new industry mentors from top tech companies.', 15, '2026-02-12 00:30:57'),
 (4, 'placementssssss', 'starts from feb 29', 15, '2026-02-13 19:25:27');
 
--- ============================================================
--- Migration: Add blog moderation/approval columns (idempotent)
--- Safe to run on existing databases — skips if columns exist.
--- ============================================================
-
-SET @schema_name = DATABASE();
-
-SET @has_approved_at = (
-    SELECT COUNT(*)
-    FROM INFORMATION_SCHEMA.COLUMNS
-    WHERE TABLE_SCHEMA = @schema_name
-      AND TABLE_NAME = 'blogs'
-      AND COLUMN_NAME = 'approved_at'
-);
-SET @sql_add_approved_at = IF(
-    @has_approved_at = 0,
-    'ALTER TABLE `blogs` ADD COLUMN `approved_at` DATETIME NULL AFTER `updated_at`',
-    'SELECT 1'
-);
-PREPARE stmt FROM @sql_add_approved_at;
-EXECUTE stmt;
-DEALLOCATE PREPARE stmt;
-
-SET @has_approved_by = (
-    SELECT COUNT(*)
-    FROM INFORMATION_SCHEMA.COLUMNS
-    WHERE TABLE_SCHEMA = @schema_name
-      AND TABLE_NAME = 'blogs'
-      AND COLUMN_NAME = 'approved_by'
-);
-SET @sql_add_approved_by = IF(
-    @has_approved_by = 0,
-    'ALTER TABLE `blogs` ADD COLUMN `approved_by` INT NULL AFTER `approved_at`',
-    'SELECT 1'
-);
-PREPARE stmt FROM @sql_add_approved_by;
-EXECUTE stmt;
-DEALLOCATE PREPARE stmt;
-
-SET @has_idx = (
-    SELECT COUNT(*)
-    FROM INFORMATION_SCHEMA.STATISTICS
-    WHERE TABLE_SCHEMA = @schema_name
-      AND TABLE_NAME = 'blogs'
-      AND INDEX_NAME = 'idx_blogs_approved_by'
-);
-SET @sql_add_idx = IF(
-    @has_idx = 0,
-    'ALTER TABLE `blogs` ADD KEY `idx_blogs_approved_by` (`approved_by`)',
-    'SELECT 1'
-);
-PREPARE stmt FROM @sql_add_idx;
-EXECUTE stmt;
-DEALLOCATE PREPARE stmt;
-
-SET @has_fk = (
-    SELECT COUNT(*)
-    FROM INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS
-    WHERE CONSTRAINT_SCHEMA = @schema_name
-      AND CONSTRAINT_NAME = 'fk_blogs_approved_by'
-);
-SET @sql_add_fk = IF(
-    @has_fk = 0,
-    'ALTER TABLE `blogs` ADD CONSTRAINT `fk_blogs_approved_by` FOREIGN KEY (`approved_by`) REFERENCES `users`(`id`) ON UPDATE CASCADE ON DELETE SET NULL',
-    'SELECT 1'
-);
-PREPARE stmt FROM @sql_add_fk;
-EXECUTE stmt;
-DEALLOCATE PREPARE stmt;
-
 
 -- ============================================================
 -- Demo Data (Auto-generated for GitHub distribution)
@@ -625,4 +555,74 @@ INSERT INTO `announcements` (`id`, `title`, `content`, `created_by`, `created_at
 (107, 'Library Access: Premium Learning Resources', 'We have partnered with Coursera, Udemy and LeetCode to provide free premium access to all registered students. Activate your accounts through the Resources section. Valid until December 2026.', 15, '2026-02-07 00:51:14'),
 (108, 'Semester Exam Schedule Released', 'The end-semester examination schedule for Spring 2026 has been published. Exams begin on April 1. Students are advised to plan their preparation alongside placement activities. Contact your department for any schedule conflicts.', 15, '2026-02-08 00:25:24'),
 (109, 'Alumni Meet 2026: Network and Learn', 'Our annual alumni meet is scheduled for March 15. Alumni from FAANG companies, startups and research institutions will be present. This is an excellent opportunity to network, seek career advice and learn about industry trends.', 15, '2026-02-09 00:04:12');
+
+-- ============================================================
+-- Migration: Add blog moderation/approval columns (idempotent)
+-- Safe to run on existing databases — skips if columns exist.
+-- ============================================================
+
+SET @schema_name = DATABASE();
+
+SET @has_approved_at = (
+    SELECT COUNT(*)
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = @schema_name
+      AND TABLE_NAME = 'blogs'
+      AND COLUMN_NAME = 'approved_at'
+);
+SET @sql_add_approved_at = IF(
+    @has_approved_at = 0,
+    'ALTER TABLE `blogs` ADD COLUMN `approved_at` DATETIME NULL AFTER `updated_at`',
+    'SELECT 1'
+);
+PREPARE stmt FROM @sql_add_approved_at;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @has_approved_by = (
+    SELECT COUNT(*)
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = @schema_name
+      AND TABLE_NAME = 'blogs'
+      AND COLUMN_NAME = 'approved_by'
+);
+SET @sql_add_approved_by = IF(
+    @has_approved_by = 0,
+    'ALTER TABLE `blogs` ADD COLUMN `approved_by` INT NULL AFTER `approved_at`',
+    'SELECT 1'
+);
+PREPARE stmt FROM @sql_add_approved_by;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @has_idx = (
+    SELECT COUNT(*)
+    FROM INFORMATION_SCHEMA.STATISTICS
+    WHERE TABLE_SCHEMA = @schema_name
+      AND TABLE_NAME = 'blogs'
+      AND INDEX_NAME = 'idx_blogs_approved_by'
+);
+SET @sql_add_idx = IF(
+    @has_idx = 0,
+    'ALTER TABLE `blogs` ADD KEY `idx_blogs_approved_by` (`approved_by`)',
+    'SELECT 1'
+);
+PREPARE stmt FROM @sql_add_idx;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @has_fk = (
+    SELECT COUNT(*)
+    FROM INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS
+    WHERE CONSTRAINT_SCHEMA = @schema_name
+      AND CONSTRAINT_NAME = 'fk_blogs_approved_by'
+);
+SET @sql_add_fk = IF(
+    @has_fk = 0,
+    'ALTER TABLE `blogs` ADD CONSTRAINT `fk_blogs_approved_by` FOREIGN KEY (`approved_by`) REFERENCES `users`(`id`) ON UPDATE CASCADE ON DELETE SET NULL',
+    'SELECT 1'
+);
+PREPARE stmt FROM @sql_add_fk;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
