@@ -10,6 +10,7 @@ USE `community_blogs`;
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
+DROP TABLE IF EXISTS `_meta`;
 DROP TABLE IF EXISTS `announcements`;
 DROP TABLE IF EXISTS `mentorship_requests`;
 DROP TABLE IF EXISTS `answers`;
@@ -20,6 +21,15 @@ DROP TABLE IF EXISTS `students`;
 DROP TABLE IF EXISTS `users`;
 
 SET FOREIGN_KEY_CHECKS = 1;
+
+-- Data version: bump this number whenever seed/demo data changes.
+-- setup.php checks this to detect stale data and auto-reimport.
+CREATE TABLE `_meta` (
+  `key` VARCHAR(50) PRIMARY KEY,
+  `value` VARCHAR(255) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `_meta` (`key`, `value`) VALUES ('data_version', '2');
 
 CREATE TABLE `users` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
