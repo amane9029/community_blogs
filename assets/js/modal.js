@@ -100,6 +100,7 @@ async function submitLogin() {
     try {
         const res = await fetch(MODAL_AUTH_API, {
             method: 'POST',
+            credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'login', email, password })
         });

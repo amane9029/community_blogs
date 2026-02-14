@@ -2,6 +2,10 @@
 
 require_once __DIR__ . '/_common.php';
 
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    session_start();
+}
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     api_json_response(['success' => false, 'error' => 'Method not allowed.'], 405);
 }
@@ -399,18 +403,44 @@ if ($action === 'update_mentorship_request_status') {
 }
 
 if ($action === 'create_mentorship_request') {
-    $user = api_require_role('student');
+    $sessionUser = isset($_SESSION['user']) && is_array($_SESSION['user']) ? $_SESSION['user'] : null;
+    if (!$sessionUser || !isset($sessionUser['id'])) {
+        http_response_code(403);
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'error' => 'Unauthorized']);
+        exit;
+    }
+
+    if (($sessionUser['role'] ?? '') !== 'student') {
+        http_response_code(403);
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'error' => 'Unauthorized']);
+        exit;
+    }
+
     $mentorUserId = (int) ($input['mentor_user_id'] ?? 0);
     $message = api_clean_text($input['message'] ?? '');
     if ($mentorUserId <= 0) {
         api_json_response(['success' => false, 'error' => 'Invalid mentor selected.'], 400);
     }
 
-    $result = repo_create_mentorship_request((int) $user['id'], $mentorUserId, $message);
+    $mentorExists = false;
+    $mentors = repo_fetch_mentors();
+    foreach ($mentors as $mentor) {
+        if ((int) ($mentor['user_id'] ?? 0) === $mentorUserId) {
+            $mentorExists = true;
+            break;
+        }
+    }
+    if (!$mentorExists) {
+        api_json_response(['success' => false, 'error' => 'Invalid mentor selected.'], 400);
+    }
+
+    $result = repo_create_mentorship_request((int) $sessionUser['id'], $mentorUserId, $message);
     if (!$result['success']) {
         api_json_response($result, 400);
     }
-    api_json_response(['success' => true, 'id' => $result['id']]);
+    api_json_response(['success' => true]);
 }
 
 if ($action === 'mentorship_requests') {

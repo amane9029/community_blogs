@@ -85,6 +85,7 @@ const router = {
         try {
             const res = await fetch(AUTH_API, {
                 method: 'POST',
+                credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ action: 'check' })
             });
@@ -235,7 +236,10 @@ const router = {
                 html = this.views.studentProfile();
                 break;
             default:
-                if (path.startsWith('/student/chat/')) {
+                if (path.startsWith('/student/question/')) {
+                    const questionId = path.split('/')[3];
+                    html = this.views.questionDetail(questionId);
+                } else if (path.startsWith('/student/chat/')) {
                     html = this.views.studentChat();
                 } else {
                     html = this.views.notFound();
@@ -448,15 +452,6 @@ const router = {
                                 <p class="text-gray-600 text-sm">Connect with mentors based on your field of interest and career goals.</p>
                             </a>
 
-                            <a href="/community" onclick="event.preventDefault(); router.navigate('/community')" class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-lg transition-shadow group">
-                                <div class="w-12 h-12 bg-primary-100 rounded-lg flex items-center justify-center mb-4 group-hover:bg-primary-200 transition-colors">
-                                    <svg class="h-6 w-6 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>
-                                    </svg>
-                                </div>
-                                <h3 class="text-lg font-semibold text-gray-900 mb-2">Real-time Guidance</h3>
-                                <p class="text-gray-600 text-sm">Get instant support through our mentorship chat system.</p>
-                            </a>
                         </div>
                     </section>
 
@@ -692,7 +687,7 @@ const router = {
                                     <div class="flex-1">
                                         <div class="flex items-start justify-between mb-2">
                                             <h3 class="text-lg font-semibold text-gray-900">
-                                                <button type="button" onclick="openQuestionDetail(${Number(question.id) || 0})" class="text-left hover:text-primary-600 cursor-pointer">
+                                                <button type="button" onclick="openQuestionDetail(${Number(question.id) || 0}, '${role === 'student' ? '/student/question/' : '/question/'}')" class="text-left hover:text-primary-600 cursor-pointer">
                                                     ${question.title}
                                                 </button>
                                             </h3>
@@ -740,7 +735,7 @@ const router = {
                                             </div>
 
                                             <div class="flex items-center space-x-4 text-sm text-gray-500">
-                                                <button type="button" onclick="openQuestionDetail(${Number(question.id) || 0})" class="flex items-center hover:text-primary-600 transition-colors">
+                                                <button type="button" onclick="openQuestionDetail(${Number(question.id) || 0}, '${role === 'student' ? '/student/question/' : '/question/'}')" class="flex items-center hover:text-primary-600 transition-colors">
                                                     <svg class="h-4 w-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
                                                     </svg>
@@ -1279,10 +1274,11 @@ const router = {
             const postedTime = question ? (question.timeAgo || question.date || '') : '';
             const answerCount = question ? (Number(question.answers) || answers.length) : answers.length;
             const viewCount = question ? (Number(question.views) || 0) : 0;
+            const backToCommunityPath = router.currentPath.startsWith('/student/question/') ? '/student/community' : '/community';
 
             return `
                 <div class="max-w-5xl mx-auto space-y-6">
-                    <button onclick="event.preventDefault(); router.navigate('/community')" class="inline-flex items-center text-gray-600 hover:text-primary-600">
+                    <button onclick="event.preventDefault(); router.navigate('${backToCommunityPath}')" class="inline-flex items-center text-gray-600 hover:text-primary-600">
                         <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m12 19-7-7 7-7"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 12H5"/></svg>
                         Back to Community
                     </button>
@@ -3527,6 +3523,7 @@ async function logout() {
     try {
         await fetch(AUTH_API, {
             method: 'POST',
+            credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'logout' })
         });
@@ -3624,6 +3621,7 @@ async function postContentJSON(payload) {
 
     const response = await fetch(CONTENT_API, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
     });
@@ -3685,17 +3683,18 @@ async function fetchQuestionDetail(questionId, force = false) {
         };
     }
 
-    if (router.currentPath === `/question/${normalizedId}`) {
+    if (router.currentPath === `/question/${normalizedId}` || router.currentPath === `/student/question/${normalizedId}`) {
         router.render();
     }
 }
 
-window.openQuestionDetail = function (questionId) {
+window.openQuestionDetail = function (questionId, routePrefix = '/question/') {
     const normalizedId = Number(questionId);
     if (!Number.isInteger(normalizedId) || normalizedId <= 0) {
         return;
     }
-    router.navigate(`/question/${normalizedId}`);
+    const normalizedPrefix = routePrefix === '/student/question/' ? '/student/question/' : '/question/';
+    router.navigate(`${normalizedPrefix}${normalizedId}`);
     fetchQuestionDetail(normalizedId, true);
 };
 
