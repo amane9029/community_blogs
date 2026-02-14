@@ -42,7 +42,7 @@ function isDatabaseReady(): bool
 
         // Check data version — if the SQL file has a newer version than
         // what is in the DB, re-run setup so updated demo data is imported.
-        $expectedVersion = '2'; // must match INSERT INTO `_meta` in init_database.sql
+        $expectedVersion = '3'; // must match INSERT INTO `_meta` in init_database.sql
         $metaExists = $pdo->query("SHOW TABLES LIKE '_meta'")->rowCount();
         if ($metaExists === 0) {
             return false; // old DB with no version tracking

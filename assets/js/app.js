@@ -271,7 +271,10 @@ const router = {
                 html = this.views.mentorProfile();
                 break;
             default:
-                if (path.startsWith('/mentor/chat/')) {
+                if (path.startsWith('/mentor/question/')) {
+                    const questionId = path.split('/')[3];
+                    html = this.views.questionDetail(questionId);
+                } else if (path.startsWith('/mentor/chat/')) {
                     html = this.views.mentorChat();
                 } else {
                     html = this.views.notFound();
@@ -613,6 +616,9 @@ const router = {
             const subtitle = role === 'mentor'
                 ? 'Answer student questions and share your expertise with the community'
                 : 'Ask questions and get answers from mentors, faculty, and alumni';
+            const questionRoutePrefix = role === 'student'
+                ? '/student/question/'
+                : (role === 'mentor' ? '/mentor/question/' : '/question/');
 
             return `
                 <div class="max-w-7xl mx-auto space-y-8">
@@ -687,7 +693,7 @@ const router = {
                                     <div class="flex-1">
                                         <div class="flex items-start justify-between mb-2">
                                             <h3 class="text-lg font-semibold text-gray-900">
-                                                <button type="button" onclick="openQuestionDetail(${Number(question.id) || 0}, '${role === 'student' ? '/student/question/' : '/question/'}')" class="text-left hover:text-primary-600 cursor-pointer">
+                                                <button type="button" onclick="openQuestionDetail(${Number(question.id) || 0}, '${questionRoutePrefix}')" class="text-left hover:text-primary-600 cursor-pointer">
                                                     ${question.title}
                                                 </button>
                                             </h3>
@@ -735,7 +741,7 @@ const router = {
                                             </div>
 
                                             <div class="flex items-center space-x-4 text-sm text-gray-500">
-                                                <button type="button" onclick="openQuestionDetail(${Number(question.id) || 0}, '${role === 'student' ? '/student/question/' : '/question/'}')" class="flex items-center hover:text-primary-600 transition-colors">
+                                                <button type="button" onclick="openQuestionDetail(${Number(question.id) || 0}, '${questionRoutePrefix}')" class="flex items-center hover:text-primary-600 transition-colors">
                                                     <svg class="h-4 w-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
                                                     </svg>
@@ -1274,7 +1280,9 @@ const router = {
             const postedTime = question ? (question.timeAgo || question.date || '') : '';
             const answerCount = question ? (Number(question.answers) || answers.length) : answers.length;
             const viewCount = question ? (Number(question.views) || 0) : 0;
-            const backToCommunityPath = router.currentPath.startsWith('/student/question/') ? '/student/community' : '/community';
+            const backToCommunityPath = router.currentPath.startsWith('/student/question/')
+                ? '/student/community'
+                : (router.currentPath.startsWith('/mentor/question/') ? '/mentor/community' : '/community');
 
             return `
                 <div class="max-w-5xl mx-auto space-y-6">
@@ -1922,7 +1930,7 @@ const router = {
                                         </div>
                                     </div>
                                     <div class="sm:text-right ml-18 sm:ml-0">
-                                        <button onclick='openMentorshipChat(${JSON.stringify(m.mentorName)}, "student")' class="btn-primary flex items-center space-x-2">
+                                        <button onclick='openMentorshipChat(${m.id}, ${JSON.stringify(m.mentorName)}, "student")' class="btn-primary flex items-center space-x-2">
                                             <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>
                                             <span>Open Chat</span>
                                             ${m.unreadMessages > 0 ? '<span class="ml-2 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">' + m.unreadMessages + '</span>' : ''}
@@ -1943,21 +1951,24 @@ const router = {
             const myQuestions = allQuestions.filter((q) => Number(q.authorId) === Number(user.id));
             const myBlogs = this.getMyBlogs();
             const allRequests = Array.isArray(router.dbData && router.dbData.mentorshipRequests) ? router.dbData.mentorshipRequests : [];
-            const mentorSource = this.getSampleMentors().find((mentor) => Number(mentor.userId || mentor.id) === Number(user.id));
+            const profileData = router.dbData && router.dbData.profile ? router.dbData.profile : null;
+            const profileSkills = Array.isArray(profileData && profileData.skills) ? profileData.skills.filter((item) => String(item || '').trim() !== '') : [];
+            const profileInterests = Array.isArray(profileData && profileData.interests) ? profileData.interests.filter((item) => String(item || '').trim() !== '') : [];
 
             const studentData = {
-                name: user.name || 'Student User',
-                email: user.email || 'N/A',
-                phone: 'Not added',
-                branch: mentorSource && mentorSource.branch ? mentorSource.branch : 'Not specified',
-                year: mentorSource && mentorSource.year ? String(mentorSource.year) : 'Not specified',
-                rollNumber: mentorSource && mentorSource.rollNumber ? mentorSource.rollNumber : 'Not specified',
-                joinedDate: 'Active account',
-                location: 'Not specified',
-                bio: mentorSource && mentorSource.bio ? mentorSource.bio : 'Update your profile to add bio.',
-                interests: ['Career Guidance'],
-                skills: ['Learning'],
-                idCardStatus: 'verified'
+                name: (profileData && profileData.name) ? profileData.name : (user.name || 'Student User'),
+                email: (profileData && profileData.email) ? profileData.email : (user.email || 'N/A'),
+                phone: (profileData && profileData.phone) ? profileData.phone : 'Not added',
+                branch: (profileData && profileData.branch) ? profileData.branch : 'Not specified',
+                year: (profileData && profileData.year) ? String(profileData.year) : 'Not specified',
+                rollNumber: (profileData && profileData.roll_number) ? profileData.roll_number : 'Not specified',
+                joinedDate: (profileData && profileData.joined_date) ? profileData.joined_date : 'Active account',
+                location: (profileData && profileData.location) ? profileData.location : 'Not specified',
+                bio: (profileData && profileData.bio) ? profileData.bio : 'Update your profile to add bio.',
+                interests: profileInterests.length ? profileInterests : ['Career Guidance'],
+                skills: profileSkills.length ? profileSkills : ['Learning'],
+                profileImage: (profileData && profileData.avatar) ? profileData.avatar : '',
+                idCardStatus: (profileData && profileData.id_card_status) ? profileData.id_card_status : 'verified'
             };
             const stats = {
                 questionsAsked: myQuestions.length,
@@ -1984,10 +1995,6 @@ const router = {
                             <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                             <span>Edit Profile</span>
                         </button>
-                        <button onclick="openChangePasswordModal()" class="btn-secondary flex items-center justify-center space-x-2 border border-primary-600 text-primary-600 hover:bg-primary-50">
-                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                            <span>Change Password</span>
-                        </button>
                     </div>
 
                     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -1996,7 +2003,10 @@ const router = {
                             <div class="bg-white border border-gray-200 rounded-2xl shadow-sm p-6 md:p-8 text-center hover:shadow-md transition">
                                 <div class="relative inline-block mb-4">
                                     <div class="h-24 w-24 md:h-32 md:w-32 rounded-full bg-gradient-to-br from-primary-100 to-primary-200 mx-auto flex items-center justify-center">
-                                        <span class="text-3xl md:text-4xl font-bold text-primary-700">${studentData.name[0]}</span>
+                                        ${studentData.profileImage
+                                            ? `<img src="${escapeAttr(studentData.profileImage)}" alt="${escapeAttr(studentData.name)}" class="h-full w-full rounded-full object-cover">`
+                                            : `<span class="text-3xl md:text-4xl font-bold text-primary-700">${studentData.name[0]}</span>`
+                                        }
                                     </div>
                                     <button onclick="showFeatureNotice('Profile picture upload coming soon.')" class="absolute bottom-0 right-0 p-2 bg-primary-600 text-white rounded-full hover:bg-primary-700 transition-colors">
                                         <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
@@ -2162,60 +2172,29 @@ const router = {
         },
 
         studentChat() {
-            const messages = [
-                { id: 1, sender: 'mentor', text: 'Hi John! Welcome to our mentorship program. How can I help you today?', time: '10:30 AM', status: 'read' },
-                { id: 2, sender: 'student', text: 'Hi Ananya! Thanks for accepting my mentorship request. I wanted to discuss my career path in product management.', time: '10:32 AM', status: 'read' },
-                { id: 3, sender: 'mentor', text: "That sounds great! I'd be happy to help. What specific areas are you interested in learning about?", time: '10:35 AM', status: 'read' },
-                { id: 4, sender: 'student', text: "I'm particularly interested in understanding how to transition from a technical role to product management. I have a CS background.", time: '10:38 AM', status: 'read' },
-                { id: 5, sender: 'mentor', text: "That's a great question! With a CS background, you already have a strong foundation. Let me share some insights...", time: '10:42 AM', status: 'read' },
-                { id: 6, sender: 'mentor', text: '1. Start by understanding user needs and market research\n2. Learn to communicate with both technical and non-technical stakeholders\n3. Practice prioritization and roadmap planning\n4. Get hands-on experience through side projects or internships', time: '10:43 AM', status: 'read' },
-                { id: 7, sender: 'student', text: 'Thank you so much! This is very helpful. Do you recommend any specific courses or resources?', time: '10:45 AM', status: 'delivered' },
-                { id: 8, sender: 'mentor', text: 'Absolutely! Here are some resources I recommend:\n\n• "Inspired" by Marty Cagan - A must-read book\n• Coursera\'s Product Management specialization\n• Follow product blogs like Mind the Product\n• Join PM communities on Slack and Discord', time: '2 hours ago', status: 'read' }
-            ];
-            const mentor = { name: 'Ananya Reddy', role: 'Product Manager @ Microsoft', avatar: 'A' };
-            const checkSvg = '<svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>';
-            const dblCheckSvg = '<svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M18 6 7 17l-5-5"/><path d="m22 10-9.5 9.5L10 17"/></svg>';
-            const clockSvg = '<svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
+            const pathParts = (router.currentPath || '').split('/');
+            const requestId = pathParts[3] || '';
             return `
-                <div class="h-[calc(100dvh-8rem)] flex flex-col bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                <div id="chatContainer" class="h-[calc(100dvh-8rem)] flex flex-col bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden" data-request-id="${requestId}" data-role="student">
                     <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-white">
                         <div class="flex items-center space-x-4">
                             <a href="javascript:void(0)" onclick="event.preventDefault(); router.navigate('/student/mentorship')" class="p-2 hover:bg-gray-100 rounded-lg transition-colors"><svg class="h-5 w-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg></a>
                             <div class="relative">
-                                <div class="h-12 w-12 rounded-full bg-gradient-to-br from-success-100 to-success-200 flex items-center justify-center"><span class="text-xl font-bold text-success-700">${mentor.avatar}</span></div>
-                                <div class="absolute bottom-0 right-0 h-3 w-3 bg-green-500 border-2 border-white rounded-full"></div>
+                                <div id="chatPartnerAvatar" class="h-12 w-12 rounded-full bg-gradient-to-br from-success-100 to-success-200 flex items-center justify-center"><span class="text-xl font-bold text-success-700">M</span></div>
                             </div>
-                            <div><h2 class="font-semibold text-gray-900">${mentor.name}</h2><p class="text-sm text-gray-500">${mentor.role}</p></div>
-                        </div>
-                        <div class="flex items-center space-x-2">
-                            <button class="p-2 hover:bg-gray-100 rounded-lg transition-colors"><svg class="h-5 w-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg></button>
-                            <button class="p-2 hover:bg-gray-100 rounded-lg transition-colors"><svg class="h-5 w-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg></button>
-                            <button class="p-2 hover:bg-gray-100 rounded-lg transition-colors"><svg class="h-5 w-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg></button>
+                            <div>
+                                <h2 id="chatPartnerName" class="font-semibold text-gray-900">Loading...</h2>
+                                <p id="chatPartnerRole" class="text-sm text-gray-500">Mentor</p>
+                            </div>
                         </div>
                     </div>
-                    <div class="flex-1 overflow-y-auto p-3 md:p-6 space-y-4 bg-gray-50">
-                        <div class="flex justify-center"><span class="px-4 py-1 bg-gray-200 text-gray-600 text-xs rounded-full">Today</span></div>
-                        ${messages.map(msg => `
-                            <div class="flex ${msg.sender === 'student' ? 'justify-end' : 'justify-start'}">
-                                <div class="flex max-w-[85%] md:max-w-[70%] ${msg.sender === 'student' ? 'flex-row-reverse' : 'flex-row'} items-end space-x-2">
-                                    ${msg.sender === 'mentor' ? '<div class="h-8 w-8 rounded-full bg-gradient-to-br from-success-100 to-success-200 flex items-center justify-center flex-shrink-0"><span class="text-sm font-bold text-success-700">' + mentor.avatar + '</span></div>' : ''}
-                                    <div class="px-4 py-2 rounded-2xl ${msg.sender === 'student' ? 'bg-primary-600 text-white rounded-br-none' : 'bg-white border border-gray-200 text-gray-900 rounded-bl-none'}">
-                                        <p class="text-sm whitespace-pre-wrap">${msg.text}</p>
-                                        <div class="flex items-center justify-end mt-1 space-x-1 ${msg.sender === 'student' ? 'text-primary-200' : 'text-gray-400'}">
-                                            <span class="text-xs">${msg.time}</span>
-                                            ${msg.sender === 'student' ? (msg.status === 'sending' ? clockSvg : msg.status === 'delivered' ? checkSvg : dblCheckSvg) : ''}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        `).join('')}
+                    <div id="chatMessages" class="flex-1 overflow-y-auto p-3 md:p-6 space-y-4 bg-gray-50">
+                        <div class="flex justify-center"><span class="px-4 py-1 bg-gray-200 text-gray-600 text-xs rounded-full">Loading messages...</span></div>
                     </div>
                     <div class="px-3 py-3 md:px-6 md:py-4 border-t border-gray-200 bg-white">
-                        <form onsubmit="event.preventDefault(); handleChatSend('studentChatInput')" class="flex items-center space-x-3">
-                            <button type="button" class="p-2 text-gray-400 hover:text-gray-600 transition-colors"><svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>
+                        <form onsubmit="event.preventDefault(); window.sendChatMessage()" class="flex items-center space-x-3">
                             <div class="flex-1 relative">
-                                <input id="studentChatInput" type="text" placeholder="Type a message..." class="w-full px-4 py-2.5 bg-gray-100 border-0 rounded-full focus:outline-none focus:ring-2 focus:ring-primary-500">
-                                <button type="button" class="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"><svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" x2="9.01" y1="9" y2="9"/><line x1="15" x2="15.01" y1="9" y2="9"/></svg></button>
+                                <input id="chatInput" type="text" placeholder="Type a message..." class="w-full px-4 py-2.5 bg-gray-100 border-0 rounded-full focus:outline-none focus:ring-2 focus:ring-primary-500" autocomplete="off">
                             </div>
                             <button type="submit" class="p-3 bg-primary-600 text-white rounded-full hover:bg-primary-700 transition-colors disabled:opacity-50"><svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><line x1="22" x2="11" y1="2" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
                         </form>
@@ -2417,7 +2396,7 @@ const router = {
                                                 <p class="text-xs text-gray-500">${student.year}, ${student.branch}</p>
                                                 <span class="text-xs text-success-600">${student.progress}</span>
                                             </div>
-                                            <button onclick='openMentorshipChat(${JSON.stringify(student.name)}, "mentor")' class="relative p-2 text-success-600 hover:bg-success-50 rounded-lg transition-colors">
+                                            <button onclick='openMentorshipChat(${student.id}, ${JSON.stringify(student.name)}, "mentor")' class="relative p-2 text-success-600 hover:bg-success-50 rounded-lg transition-colors">
                                                 <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>
                                                 </svg>
@@ -2762,7 +2741,7 @@ const router = {
                                             <button onclick="openMentorStudentProfileModal(${student.id})" class="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
                                                 View Profile
                                             </button>
-                                            <button onclick='openMentorshipChat(${JSON.stringify(student.name)}, "mentor")' class="px-4 py-2 text-sm font-medium text-success-600 border border-success-600 rounded-lg hover:bg-success-50 transition-colors flex items-center space-x-1">
+                                            <button onclick='openMentorshipChat(${student.id}, ${JSON.stringify(student.name)}, "mentor")' class="px-4 py-2 text-sm font-medium text-success-600 border border-success-600 rounded-lg hover:bg-success-50 transition-colors flex items-center space-x-1">
                                                 <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>
                                                 </svg>
@@ -2797,6 +2776,7 @@ const router = {
         mentorProfile() {
             const currentUser = router.user || {};
             const mentorSource = this.getSampleMentors().find((mentor) => Number(mentor.userId || mentor.id) === Number(currentUser.id));
+            const profileData = router.dbData && router.dbData.profile ? router.dbData.profile : null;
             const myBlogs = this.getMyBlogs();
             const mentorshipRequests = Array.isArray(router.dbData && router.dbData.mentorshipRequests) ? router.dbData.mentorshipRequests : [];
             const questions = this.getSampleQuestions();
@@ -2816,22 +2796,28 @@ const router = {
                 savedExpertise = [];
             }
 
+            const profileSkills = Array.isArray(profileData && profileData.skills) ? profileData.skills.filter((item) => String(item || '').trim() !== '') : [];
+            const profileExpertise = Array.isArray(profileData && profileData.expertise) ? profileData.expertise.filter((item) => String(item || '').trim() !== '') : [];
+            const fallbackExpertise = profileExpertise.length
+                ? profileExpertise
+                : (savedExpertise.length
+                    ? savedExpertise
+                    : (mentorSource && Array.isArray(mentorSource.skills) && mentorSource.skills.length ? mentorSource.skills : ['Mentorship']));
+
             const mentorData = {
-                name: currentUser.name || 'Mentor User',
-                email: currentUser.email || 'N/A',
-                role: mentorSource && mentorSource.role ? mentorSource.role : 'Mentor',
-                company: mentorSource && mentorSource.company ? mentorSource.company : 'N/A',
-                location: mentorSource && mentorSource.location ? mentorSource.location : 'N/A',
-                avatar: (currentUser.name || 'M').charAt(0).toUpperCase(),
+                name: (profileData && profileData.name) ? profileData.name : (currentUser.name || 'Mentor User'),
+                email: (profileData && profileData.email) ? profileData.email : (currentUser.email || 'N/A'),
+                role: (profileData && profileData.position) ? profileData.position : (mentorSource && mentorSource.role ? mentorSource.role : 'Mentor'),
+                company: (profileData && profileData.company) ? profileData.company : (mentorSource && mentorSource.company ? mentorSource.company : 'N/A'),
+                location: (profileData && profileData.location) ? profileData.location : (mentorSource && mentorSource.location ? mentorSource.location : 'N/A'),
+                phone: (profileData && profileData.phone) ? profileData.phone : 'Not added',
+                avatar: ((profileData && profileData.name) ? profileData.name : (currentUser.name || 'M')).charAt(0).toUpperCase(),
+                profileImage: (profileData && profileData.avatar) ? profileData.avatar : '',
                 batch: mentorSource && mentorSource.batch ? mentorSource.batch : 'N/A',
                 experience: mentorSource && mentorSource.experience ? mentorSource.experience : '5+ years',
-                bio: mentorSource && mentorSource.bio ? mentorSource.bio : 'Update your profile with your professional background.',
-                expertise: savedExpertise.length
-                    ? savedExpertise
-                    : (mentorSource && Array.isArray(mentorSource.skills) && mentorSource.skills.length ? mentorSource.skills : ['Mentorship']),
-                skills: savedExpertise.length
-                    ? savedExpertise
-                    : (mentorSource && Array.isArray(mentorSource.skills) && mentorSource.skills.length ? mentorSource.skills : ['Career Guidance']),
+                bio: (profileData && profileData.bio) ? profileData.bio : (mentorSource && mentorSource.bio ? mentorSource.bio : 'Update your profile with your professional background.'),
+                expertise: fallbackExpertise,
+                skills: profileSkills.length ? profileSkills : fallbackExpertise,
                 stats: {
                     studentsMentored: mentorshipRequests.filter((request) => ['approved', 'completed'].includes(String(request.status || '').toLowerCase())).length,
                     questionsAnswered: questions.reduce((sum, question) => sum + (Number(question.answers) || 0), 0),
@@ -2848,8 +2834,11 @@ const router = {
                     <!-- Profile Header -->
                     <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
                         <div class="flex flex-col md:flex-row md:items-center gap-6">
-                            <div class="h-24 w-24 rounded-full bg-gradient-to-br from-success-100 to-success-200 flex items-center justify-center text-3xl font-bold text-success-700">
-                                ${mentorData.avatar}
+                            <div class="h-24 w-24 rounded-full bg-gradient-to-br from-success-100 to-success-200 flex items-center justify-center text-3xl font-bold text-success-700 overflow-hidden">
+                                ${mentorData.profileImage
+                                    ? `<img src="${escapeAttr(mentorData.profileImage)}" alt="${escapeAttr(mentorData.name)}" class="h-full w-full object-cover">`
+                                    : mentorData.avatar
+                                }
                             </div>
                             <div class="flex-1">
                                 <div class="flex flex-col md:flex-row md:items-center md:justify-between">
@@ -2947,6 +2936,17 @@ const router = {
                                         <div>
                                             <p class="text-sm font-medium text-gray-900">Email</p>
                                             <p class="text-sm text-gray-600">${mentorData.email}</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center space-x-3">
+                                        <div class="h-10 w-10 rounded-lg bg-gray-100 flex items-center justify-center">
+                                            <svg class="h-5 w-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>
+                                            </svg>
+                                        </div>
+                                        <div>
+                                            <p class="text-sm font-medium text-gray-900">Phone</p>
+                                            <p class="text-sm text-gray-600">${mentorData.phone}</p>
                                         </div>
                                     </div>
                                     <div class="flex items-center space-x-3">
@@ -3061,94 +3061,51 @@ const router = {
         },
 
         mentorChat() {
-            const messages = [
-                { id: 1, sender: 'student', text: 'Hi Akari! Thanks for accepting my mentorship request.', time: '10:30 AM', status: 'read' },
-                { id: 2, sender: 'mentor', text: 'Hi Kenji! Welcome to our mentorship program. How can I help you today?', time: '10:32 AM', status: 'read' },
-                { id: 3, sender: 'student', text: 'I wanted to discuss my career path in product management. I have a CS background.', time: '10:35 AM', status: 'read' },
-                { id: 4, sender: 'mentor', text: "That's a great question! I'd be happy to help. With a CS background, you already have a strong foundation.", time: '10:38 AM', status: 'read' },
-                { id: 5, sender: 'mentor', text: 'Let me share some insights:\n\n1. Start by understanding user needs and market research\n2. Learn to communicate with both technical and non-technical stakeholders\n3. Practice prioritization and roadmap planning\n4. Get hands-on experience through side projects or internships', time: '10:42 AM', status: 'read' },
-                { id: 6, sender: 'student', text: 'Thank you so much! This is very helpful. Do you recommend any specific courses or resources?', time: '10:45 AM', status: 'read' },
-                { id: 7, sender: 'mentor', text: 'Absolutely! Here are some resources I recommend:\n\n• "Inspired" by Marty Cagan - A must-read book\n• Coursera\'s Product Management specialization\n• Follow product blogs like Mind the Product\n• Join PM communities on Slack and Discord', time: '2 hours ago', status: 'read' },
-                { id: 8, sender: 'student', text: "That's amazing! I'll definitely check these out. Can we schedule a call to discuss my specific situation?", time: '1 hour ago', status: 'read' }
-            ];
-            const student = { name: 'Kenji Tanaka', year: '3rd Year', branch: 'Computer Science', avatar: 'K', mentorshipStart: 'Jan 22, 2026', sessionsCompleted: 5, totalSessions: 10 };
-            const checkSvg = '<svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>';
-            const dblCheckSvg = '<svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M18 6 7 17l-5-5"/><path d="m22 10-9.5 9.5L10 17"/></svg>';
-            const clockSvg = '<svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
-            const progressPct = Math.round((student.sessionsCompleted / student.totalSessions) * 100);
+            const pathParts = (router.currentPath || '').split('/');
+            const requestId = pathParts[3] || '';
             return `
-                <div class="h-[calc(100dvh-8rem)] flex bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                <div id="chatContainer" class="h-[calc(100dvh-8rem)] flex bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden" data-request-id="${requestId}" data-role="mentor">
                     <div class="flex-1 flex flex-col">
                         <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-white">
                             <div class="flex items-center space-x-4">
                                 <a href="javascript:void(0)" onclick="event.preventDefault(); router.navigate('/mentor/students')" class="p-2 hover:bg-gray-100 rounded-lg transition-colors"><svg class="h-5 w-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg></a>
                                 <div class="relative">
-                                    <div class="h-12 w-12 rounded-full bg-gradient-to-br from-primary-100 to-primary-200 flex items-center justify-center"><span class="text-xl font-bold text-primary-700">${student.avatar}</span></div>
-                                    <div class="absolute bottom-0 right-0 h-3 w-3 bg-green-500 border-2 border-white rounded-full"></div>
+                                    <div id="chatPartnerAvatar" class="h-12 w-12 rounded-full bg-gradient-to-br from-primary-100 to-primary-200 flex items-center justify-center"><span class="text-xl font-bold text-primary-700">S</span></div>
                                 </div>
-                                <div><h2 class="font-semibold text-gray-900">${student.name}</h2><p class="text-sm text-gray-500">${student.year}, ${student.branch}</p></div>
-                            </div>
-                            <div class="flex items-center space-x-2">
-                                <button class="p-2 hover:bg-gray-100 rounded-lg transition-colors"><svg class="h-5 w-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg></button>
-                                <button class="p-2 hover:bg-gray-100 rounded-lg transition-colors"><svg class="h-5 w-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg></button>
-                                <button class="p-2 hover:bg-gray-100 rounded-lg transition-colors"><svg class="h-5 w-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg></button>
+                                <div>
+                                    <h2 id="chatPartnerName" class="font-semibold text-gray-900">Loading...</h2>
+                                    <p id="chatPartnerRole" class="text-sm text-gray-500">Student</p>
+                                </div>
                             </div>
                         </div>
-                        <div class="flex-1 overflow-y-auto p-3 md:p-6 space-y-4 bg-gray-50">
-                            <div class="flex justify-center"><span class="px-4 py-1 bg-gray-200 text-gray-600 text-xs rounded-full">Today</span></div>
-                            ${messages.map(msg => `
-                                <div class="flex ${msg.sender === 'mentor' ? 'justify-end' : 'justify-start'}">
-                                    <div class="flex max-w-[85%] md:max-w-[70%] ${msg.sender === 'mentor' ? 'flex-row-reverse' : 'flex-row'} items-end space-x-2">
-                                        ${msg.sender === 'student' ? '<div class="h-8 w-8 rounded-full bg-gradient-to-br from-primary-100 to-primary-200 flex items-center justify-center flex-shrink-0"><span class="text-sm font-bold text-primary-700">' + student.avatar + '</span></div>' : ''}
-                                        <div class="px-4 py-2 rounded-2xl ${msg.sender === 'mentor' ? 'bg-success-600 text-white rounded-br-none' : 'bg-white border border-gray-200 text-gray-900 rounded-bl-none'}">
-                                            <p class="text-sm whitespace-pre-wrap">${msg.text}</p>
-                                            <div class="flex items-center justify-end mt-1 space-x-1 ${msg.sender === 'mentor' ? 'text-success-200' : 'text-gray-400'}">
-                                                <span class="text-xs">${msg.time}</span>
-                                                ${msg.sender === 'mentor' ? (msg.status === 'sending' ? clockSvg : msg.status === 'delivered' ? checkSvg : dblCheckSvg) : ''}
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            `).join('')}
+                        <div id="chatMessages" class="flex-1 overflow-y-auto p-3 md:p-6 space-y-4 bg-gray-50">
+                            <div class="flex justify-center"><span class="px-4 py-1 bg-gray-200 text-gray-600 text-xs rounded-full">Loading messages...</span></div>
                         </div>
                         <div class="px-3 py-3 md:px-6 md:py-4 border-t border-gray-200 bg-white">
-                            <form onsubmit="event.preventDefault(); handleChatSend('mentorChatInput')" class="flex items-center space-x-3">
-                                <button type="button" class="p-2 text-gray-400 hover:text-gray-600 transition-colors"><svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>
+                            <form onsubmit="event.preventDefault(); window.sendChatMessage()" class="flex items-center space-x-3">
                                 <div class="flex-1 relative">
-                                    <input id="mentorChatInput" type="text" placeholder="Type a message..." class="w-full px-4 py-2.5 bg-gray-100 border-0 rounded-full focus:outline-none focus:ring-2 focus:ring-success-500">
-                                    <button type="button" class="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"><svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" x2="9.01" y1="9" y2="9"/><line x1="15" x2="15.01" y1="9" y2="9"/></svg></button>
+                                    <input id="chatInput" type="text" placeholder="Type a message..." class="w-full px-4 py-2.5 bg-gray-100 border-0 rounded-full focus:outline-none focus:ring-2 focus:ring-success-500" autocomplete="off">
                                 </div>
                                 <button type="submit" class="p-3 bg-success-600 text-white rounded-full hover:bg-success-700 transition-colors disabled:opacity-50"><svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><line x1="22" x2="11" y1="2" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
                             </form>
                         </div>
                     </div>
-                    <div class="w-80 border-l border-gray-200 bg-gray-50 hidden lg:block">
+                    <div id="chatSidebar" class="w-80 border-l border-gray-200 bg-gray-50 hidden lg:block">
                         <div class="p-6">
                             <div class="text-center mb-6">
-                                <div class="h-20 w-20 rounded-full bg-gradient-to-br from-primary-100 to-primary-200 mx-auto flex items-center justify-center mb-3"><span class="text-3xl font-bold text-primary-700">${student.avatar}</span></div>
-                                <h3 class="font-semibold text-gray-900">${student.name}</h3>
-                                <p class="text-sm text-gray-600">${student.year}, ${student.branch}</p>
+                                <div id="sidebarAvatar" class="h-20 w-20 rounded-full bg-gradient-to-br from-primary-100 to-primary-200 mx-auto flex items-center justify-center mb-3"><span class="text-3xl font-bold text-primary-700">S</span></div>
+                                <h3 id="sidebarName" class="font-semibold text-gray-900">Student</h3>
+                                <p id="sidebarRole" class="text-sm text-gray-600">Student</p>
                             </div>
                             <div class="space-y-4">
                                 <div class="bg-white rounded-lg p-4">
-                                    <h4 class="text-sm font-medium text-gray-900 mb-3">Mentorship Details</h4>
-                                    <div class="space-y-2 text-sm">
-                                        <div class="flex justify-between"><span class="text-gray-600">Started</span><span class="text-gray-900">${student.mentorshipStart}</span></div>
-                                        <div class="flex justify-between"><span class="text-gray-600">Sessions</span><span class="text-gray-900">${student.sessionsCompleted}/${student.totalSessions}</span></div>
-                                        <div class="mt-3"><div class="w-full h-2 bg-gray-200 rounded-full overflow-hidden"><div class="h-full bg-success-600 rounded-full" style="width: ${progressPct}%"></div></div></div>
-                                    </div>
-                                </div>
-                                <div class="bg-white rounded-lg p-4">
-                                    <h4 class="text-sm font-medium text-gray-900 mb-3">Quick Actions</h4>
-                                    <div class="space-y-2">
-                                        <button class="w-full flex items-center p-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg transition-colors"><svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg> Schedule Session</button>
-                                        <button class="w-full flex items-center p-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg transition-colors"><svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/><polyline points="10 9 9 9 8 9"/></svg> View Profile</button>
-                                        <button class="w-full flex items-center p-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg transition-colors"><svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg> Call Student</button>
-                                    </div>
-                                </div>
-                                <div class="bg-white rounded-lg p-4">
-                                    <h4 class="text-sm font-medium text-gray-900 mb-3">Notes</h4>
-                                    <textarea placeholder="Add private notes about this student..." rows="4" class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-success-500"></textarea>
+                                    <h4 class="text-sm font-medium text-gray-900 mb-3">Chat Guidelines</h4>
+                                    <ul class="text-xs text-gray-600 space-y-1.5">
+                                        <li>&#8226; Be respectful and professional</li>
+                                        <li>&#8226; Keep discussions mentorship-focused</li>
+                                        <li>&#8226; Do not share personal contact info</li>
+                                        <li>&#8226; Report any inappropriate behavior</li>
+                                    </ul>
                                 </div>
                             </div>
                         </div>
@@ -3683,7 +3640,11 @@ async function fetchQuestionDetail(questionId, force = false) {
         };
     }
 
-    if (router.currentPath === `/question/${normalizedId}` || router.currentPath === `/student/question/${normalizedId}`) {
+    if (
+        router.currentPath === `/question/${normalizedId}` ||
+        router.currentPath === `/student/question/${normalizedId}` ||
+        router.currentPath === `/mentor/question/${normalizedId}`
+    ) {
         router.render();
     }
 }
@@ -3693,7 +3654,12 @@ window.openQuestionDetail = function (questionId, routePrefix = '/question/') {
     if (!Number.isInteger(normalizedId) || normalizedId <= 0) {
         return;
     }
-    const normalizedPrefix = routePrefix === '/student/question/' ? '/student/question/' : '/question/';
+    let normalizedPrefix = '/question/';
+    if (routePrefix === '/student/question/') {
+        normalizedPrefix = '/student/question/';
+    } else if (routePrefix === '/mentor/question/') {
+        normalizedPrefix = '/mentor/question/';
+    }
     router.navigate(`${normalizedPrefix}${normalizedId}`);
     fetchQuestionDetail(normalizedId, true);
 };

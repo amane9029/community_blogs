@@ -12,6 +12,145 @@ function repo_db()
     return getDatabaseConnection();
 }
 
+function repo_table_has_column($table, $column)
+{
+    if (!isset($GLOBALS['repo_table_columns_cache']) || !is_array($GLOBALS['repo_table_columns_cache'])) {
+        $GLOBALS['repo_table_columns_cache'] = [];
+    }
+    $cache = &$GLOBALS['repo_table_columns_cache'];
+
+    $table = (string) $table;
+    $column = (string) $column;
+    if ($table === '' || $column === '') {
+        return false;
+    }
+
+    if (isset($cache[$table]) && array_key_exists($column, $cache[$table])) {
+        return $cache[$table][$column];
+    }
+
+    try {
+        $pdo = repo_db();
+        $stmt = $pdo->prepare(
+            'SELECT 1
+             FROM INFORMATION_SCHEMA.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = :table_name
+               AND COLUMN_NAME = :column_name
+             LIMIT 1'
+        );
+        $stmt->execute([
+            ':table_name' => $table,
+            ':column_name' => $column,
+        ]);
+        $exists = (bool) $stmt->fetchColumn();
+        if (!isset($cache[$table])) {
+            $cache[$table] = [];
+        }
+        $cache[$table][$column] = $exists;
+        return $exists;
+    } catch (Throwable $e) {
+        error_log('repo_table_has_column failed: ' . $e->getMessage());
+        return false;
+    }
+}
+
+function repo_clear_table_column_cache($table = null)
+{
+    if (!isset($GLOBALS['repo_table_columns_cache']) || !is_array($GLOBALS['repo_table_columns_cache'])) {
+        $GLOBALS['repo_table_columns_cache'] = [];
+    }
+    $cache = &$GLOBALS['repo_table_columns_cache'];
+    if ($table === null) {
+        $cache = [];
+        return;
+    }
+    $table = (string) $table;
+    if (isset($cache[$table])) {
+        unset($cache[$table]);
+    }
+}
+
+function repo_ensure_column($table, $column, $definitionSql)
+{
+    $table = (string) $table;
+    $column = (string) $column;
+    $definitionSql = trim((string) $definitionSql);
+    if ($table === '' || $column === '' || $definitionSql === '') {
+        return false;
+    }
+
+    if (repo_table_has_column($table, $column)) {
+        return true;
+    }
+
+    try {
+        $pdo = repo_db();
+        $pdo->exec("ALTER TABLE `{$table}` ADD COLUMN `{$column}` {$definitionSql}");
+        repo_clear_table_column_cache($table);
+        return repo_table_has_column($table, $column);
+    } catch (Throwable $e) {
+        error_log("repo_ensure_column failed for {$table}.{$column}: " . $e->getMessage());
+        return false;
+    }
+}
+
+function repo_ensure_index($table, $indexName, $indexSql)
+{
+    $table = (string) $table;
+    $indexName = (string) $indexName;
+    $indexSql = trim((string) $indexSql);
+    if ($table === '' || $indexName === '' || $indexSql === '') {
+        return false;
+    }
+
+    try {
+        $pdo = repo_db();
+        $check = $pdo->prepare(
+            'SELECT 1
+             FROM INFORMATION_SCHEMA.STATISTICS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = :table_name
+               AND INDEX_NAME = :index_name
+             LIMIT 1'
+        );
+        $check->execute([
+            ':table_name' => $table,
+            ':index_name' => $indexName,
+        ]);
+        if ($check->fetchColumn()) {
+            return true;
+        }
+
+        $pdo->exec("ALTER TABLE `{$table}` {$indexSql}");
+        return true;
+    } catch (Throwable $e) {
+        error_log("repo_ensure_index failed for {$table}.{$indexName}: " . $e->getMessage());
+        return false;
+    }
+}
+
+function repo_ensure_application_schema()
+{
+    static $checked = false;
+    if ($checked) {
+        return;
+    }
+
+    repo_ensure_column('users', 'phone', 'VARCHAR(30) DEFAULT NULL');
+    repo_ensure_column('users', 'location', 'VARCHAR(255) DEFAULT NULL');
+    repo_ensure_column('users', 'skills', 'TEXT DEFAULT NULL');
+    repo_ensure_column('users', 'interests', 'TEXT DEFAULT NULL');
+    repo_ensure_column('messages', 'sender_role', "ENUM('student','mentor') DEFAULT NULL");
+    repo_ensure_index(
+        'mentorship_requests',
+        'idx_mentorship_pair_created',
+        'ADD INDEX `idx_mentorship_pair_created` (`student_id`, `mentor_id`, `created_at`)'
+    );
+
+    $checked = true;
+}
+
 function repo_blogs_has_approval_columns()
 {
     static $hasColumns = null;
@@ -451,7 +590,14 @@ function repo_fetch_answers_by_question($questionId)
              FROM answers a
              LEFT JOIN users u ON u.id = a.author_id
              WHERE a.question_id = :question_id
-             ORDER BY a.is_verified DESC, a.created_at ASC'
+             ORDER BY
+                CASE
+                    WHEN a.is_verified = 1 THEN 0
+                    WHEN LOWER(COALESCE(u.role, \'student\')) = \'mentor\' THEN 1
+                    ELSE 2
+                END ASC,
+                a.created_at DESC,
+                a.id DESC'
         );
         $stmt->execute([':question_id' => (int) $questionId]);
         return $stmt->fetchAll();
@@ -560,13 +706,17 @@ function repo_fetch_mentors()
 {
     try {
         $pdo = repo_db();
+        $locationSelect = repo_table_has_column('users', 'location')
+            ? 'u.location AS location'
+            : 'NULL AS location';
         $stmt = $pdo->query(
-            'SELECT
+            "SELECT
                 m.id, m.user_id, m.company, m.position, m.expertise, m.verified_by_admin,
+                {$locationSelect},
                 u.name, u.email, u.avatar, u.bio, u.status, u.verification_status
              FROM mentors m
              INNER JOIN users u ON u.id = m.user_id
-             ORDER BY u.created_at DESC'
+             ORDER BY u.created_at DESC"
         );
         return $stmt->fetchAll();
     } catch (Throwable $e) {
@@ -578,7 +728,19 @@ function repo_fetch_mentors()
 function repo_create_mentorship_request($studentUserId, $mentorUserId, $message)
 {
     try {
+        repo_ensure_application_schema();
         $pdo = repo_db();
+        $studentUserId = (int) $studentUserId;
+        $mentorUserId = (int) $mentorUserId;
+
+        if ($studentUserId <= 0 || $mentorUserId <= 0) {
+            return ['success' => false, 'error' => 'Invalid student or mentor profile.'];
+        }
+        if ($studentUserId === $mentorUserId) {
+            return ['success' => false, 'error' => 'You cannot request mentorship from your own account.'];
+        }
+
+        $pdo->beginTransaction();
 
         $studentStmt = $pdo->prepare('SELECT 1 FROM students WHERE user_id = :user_id LIMIT 1');
         $studentStmt->execute([':user_id' => $studentUserId]);
@@ -589,7 +751,60 @@ function repo_create_mentorship_request($studentUserId, $mentorUserId, $message)
         $mentor = $mentorStmt->fetchColumn();
 
         if (!$student || !$mentor) {
+            $pdo->rollBack();
             return ['success' => false, 'error' => 'Invalid student or mentor profile.'];
+        }
+
+        $recentStmt = $pdo->prepare(
+            'SELECT created_at
+             FROM mentorship_requests
+             WHERE student_id = :student_id
+               AND mentor_id = :mentor_id
+               AND created_at > DATE_SUB(NOW(), INTERVAL 2 DAY)
+             ORDER BY created_at DESC
+             LIMIT 1
+             FOR UPDATE'
+        );
+        $recentStmt->execute([
+            ':student_id' => $studentUserId,
+            ':mentor_id' => $mentorUserId,
+        ]);
+        $recentRequest = $recentStmt->fetch();
+        if ($recentRequest) {
+            $createdAt = (string) ($recentRequest['created_at'] ?? '');
+            $retryDate = null;
+            $retryAfterSeconds = null;
+
+            if ($createdAt !== '') {
+                try {
+                    $requestTime = new DateTimeImmutable($createdAt);
+                    $retryDateTime = $requestTime->modify('+2 days');
+                    $retryDate = $retryDateTime->format('Y-m-d H:i:s');
+                    $retryAfterSeconds = max(1, $retryDateTime->getTimestamp() - time());
+                } catch (Throwable $e) {
+                    $retryDate = null;
+                    $retryAfterSeconds = null;
+                }
+            }
+
+            $pdo->rollBack();
+
+            $messageText = 'You can send another mentorship request to this mentor only after 2 days.';
+            if ($retryDate) {
+                try {
+                    $messageText = 'You can send another mentorship request to this mentor after ' . (new DateTimeImmutable($retryDate))->format('M d, Y h:i A') . '.';
+                } catch (Throwable $e) {
+                    $messageText = 'You can send another mentorship request to this mentor after ' . $retryDate . '.';
+                }
+            }
+
+            return [
+                'success' => false,
+                'code' => 'rate_limited',
+                'error' => $messageText,
+                'retry_at' => $retryDate,
+                'retry_after_seconds' => $retryAfterSeconds,
+            ];
         }
 
         $insert = $pdo->prepare(
@@ -603,8 +818,12 @@ function repo_create_mentorship_request($studentUserId, $mentorUserId, $message)
             ':message' => $message,
         ]);
 
+        $pdo->commit();
         return ['success' => true, 'id' => (int) $pdo->lastInsertId()];
     } catch (Throwable $e) {
+        if (isset($pdo) && $pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
         error_log('repo_create_mentorship_request failed: ' . $e->getMessage());
         return ['success' => false, 'error' => 'Failed to create mentorship request.'];
     }
@@ -740,29 +959,185 @@ function repo_update_user_verification($userId, $verificationStatus)
     }
 }
 
-function repo_update_user_profile($userId, $name, $bio = null, $avatar = null)
+function repo_fetch_user_profile($userId)
 {
     try {
         $pdo = repo_db();
+
+        $phoneColumn = repo_table_has_column('users', 'phone') ? 'u.phone AS phone' : 'NULL AS phone';
+        $locationColumn = repo_table_has_column('users', 'location') ? 'u.location AS location' : 'NULL AS location';
+        $skillsColumn = repo_table_has_column('users', 'skills') ? 'u.skills AS skills' : 'NULL AS skills';
+        $interestsColumn = repo_table_has_column('users', 'interests') ? 'u.interests AS interests' : 'NULL AS interests';
+
         $stmt = $pdo->prepare(
-            'UPDATE users
-             SET name = :name,
-                 bio = :bio,
-                 avatar = :avatar,
-                 updated_at = NOW()
-             WHERE id = :id'
+            "SELECT
+                u.id, u.name, u.email, u.role, u.avatar, u.bio, u.created_at, u.updated_at,
+                {$phoneColumn},
+                {$locationColumn},
+                {$skillsColumn},
+                {$interestsColumn},
+                s.roll_number, s.branch, s.year, s.college_id_path,
+                m.company, m.position, m.expertise, m.job_id_path, m.verified_by_admin
+             FROM users u
+             LEFT JOIN students s ON s.user_id = u.id
+             LEFT JOIN mentors m ON m.user_id = u.id
+             WHERE u.id = :id
+             LIMIT 1"
         );
-        $stmt->execute([
-            ':name' => $name,
-            ':bio' => $bio,
-            ':avatar' => $avatar,
-            ':id' => (int) $userId,
-        ]);
-        return $stmt->rowCount() > 0;
+        $stmt->execute([':id' => (int) $userId]);
+        $profile = $stmt->fetch();
+        return $profile ?: null;
     } catch (Throwable $e) {
-        error_log('repo_update_user_profile failed: ' . $e->getMessage());
+        error_log('repo_fetch_user_profile failed: ' . $e->getMessage());
+        return null;
+    }
+}
+
+function repo_update_user_profile_details($userId, $role, array $payload)
+{
+    $role = strtolower((string) $role);
+    if (!in_array($role, ['student', 'mentor', 'admin'], true)) {
+        return ['success' => false, 'error' => 'Invalid role for profile update.'];
+    }
+
+    try {
+        repo_ensure_application_schema();
+        $pdo = repo_db();
+        $pdo->beginTransaction();
+
+        $params = [
+            ':name' => $payload['name'],
+            ':email' => $payload['email'],
+            ':bio' => $payload['bio'] ?? null,
+            ':avatar' => $payload['avatar'] ?? null,
+            ':id' => (int) $userId,
+            ':role' => $role,
+        ];
+
+        $userSql = 'UPDATE users
+                    SET name = :name,
+                        email = :email,
+                        bio = :bio,
+                        avatar = :avatar,
+                        updated_at = NOW()';
+
+        if (repo_table_has_column('users', 'phone')) {
+            $userSql .= ', phone = :phone';
+            $params[':phone'] = $payload['phone'] ?? null;
+        }
+        if (repo_table_has_column('users', 'location')) {
+            $userSql .= ', location = :location';
+            $params[':location'] = $payload['location'] ?? null;
+        }
+        if (repo_table_has_column('users', 'skills')) {
+            $userSql .= ', skills = :skills';
+            $params[':skills'] = $payload['skills'] ?? null;
+        }
+        if (repo_table_has_column('users', 'interests')) {
+            $userSql .= ', interests = :interests';
+            $params[':interests'] = $payload['interests'] ?? null;
+        }
+
+        $userSql .= ' WHERE id = :id AND role = :role';
+        $userStmt = $pdo->prepare($userSql);
+        $userStmt->execute($params);
+
+        if ($userStmt->rowCount() === 0) {
+            $existsStmt = $pdo->prepare('SELECT 1 FROM users WHERE id = :id AND role = :role LIMIT 1');
+            $existsStmt->execute([':id' => (int) $userId, ':role' => $role]);
+            if (!$existsStmt->fetchColumn()) {
+                $pdo->rollBack();
+                return ['success' => false, 'error' => 'User profile not found.'];
+            }
+        }
+
+        if ($role === 'student') {
+            $studentStmt = $pdo->prepare(
+                'INSERT INTO students (user_id, roll_number, branch, year, college_id_path)
+                 VALUES (:user_id, :roll_number, :branch, :year, :college_id_path)
+                 ON DUPLICATE KEY UPDATE
+                    roll_number = VALUES(roll_number),
+                    branch = VALUES(branch),
+                    year = VALUES(year)'
+            );
+            $studentStmt->execute([
+                ':user_id' => (int) $userId,
+                ':roll_number' => $payload['roll_number'],
+                ':branch' => $payload['branch'] ?? null,
+                ':year' => $payload['year'] ?? null,
+                ':college_id_path' => $payload['college_id_path'] ?? null,
+            ]);
+        } elseif ($role === 'mentor') {
+            $mentorStmt = $pdo->prepare(
+                'INSERT INTO mentors (user_id, company, position, expertise, job_id_path, verified_by_admin)
+                 VALUES (:user_id, :company, :position, :expertise, :job_id_path, :verified_by_admin)
+                 ON DUPLICATE KEY UPDATE
+                    company = VALUES(company),
+                    position = VALUES(position),
+                    expertise = VALUES(expertise)'
+            );
+            $mentorStmt->execute([
+                ':user_id' => (int) $userId,
+                ':company' => $payload['company'] ?? null,
+                ':position' => $payload['position'] ?? null,
+                ':expertise' => $payload['expertise'] ?? null,
+                ':job_id_path' => $payload['job_id_path'] ?? null,
+                ':verified_by_admin' => $payload['verified_by_admin'] ?? 0,
+            ]);
+        }
+
+        $pdo->commit();
+        return ['success' => true];
+    } catch (PDOException $e) {
+        if (isset($pdo) && $pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        if ($e->getCode() === '23000') {
+            $errorText = strtolower((string) $e->getMessage());
+            if (strpos($errorText, 'roll') !== false) {
+                return ['success' => false, 'error' => 'Roll number already exists.'];
+            }
+            return ['success' => false, 'error' => 'Email already exists.'];
+        }
+        error_log('repo_update_user_profile_details failed: ' . $e->getMessage());
+        return ['success' => false, 'error' => 'Failed to update profile.'];
+    } catch (Throwable $e) {
+        if (isset($pdo) && $pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        error_log('repo_update_user_profile_details failed: ' . $e->getMessage());
+        return ['success' => false, 'error' => 'Failed to update profile.'];
+    }
+}
+
+function repo_update_user_profile($userId, $name, $bio = null, $avatar = null)
+{
+    $profile = repo_fetch_user_profile((int) $userId);
+    if (!$profile) {
         return false;
     }
+
+    $result = repo_update_user_profile_details((int) $userId, (string) ($profile['role'] ?? ''), [
+        'name' => $name,
+        'email' => (string) ($profile['email'] ?? ''),
+        'bio' => $bio,
+        'avatar' => $avatar,
+        'phone' => $profile['phone'] ?? null,
+        'location' => $profile['location'] ?? null,
+        'skills' => $profile['skills'] ?? null,
+        'interests' => $profile['interests'] ?? null,
+        'roll_number' => $profile['roll_number'] ?? null,
+        'branch' => $profile['branch'] ?? null,
+        'year' => $profile['year'] ?? null,
+        'college_id_path' => $profile['college_id_path'] ?? null,
+        'company' => $profile['company'] ?? null,
+        'position' => $profile['position'] ?? null,
+        'expertise' => $profile['expertise'] ?? null,
+        'job_id_path' => $profile['job_id_path'] ?? null,
+        'verified_by_admin' => $profile['verified_by_admin'] ?? 0,
+    ]);
+
+    return (bool) ($result['success'] ?? false);
 }
 
 function repo_update_user_password($userId, $passwordHash)
@@ -1025,15 +1400,20 @@ function repo_search_content($query, $limitPerType = 8)
         $questionStmt->execute();
         $questions = $questionStmt->fetchAll();
 
+        $locationSelect = repo_table_has_column('users', 'location')
+            ? 'u.location AS location'
+            : 'NULL AS location';
+
         $mentorStmt = $pdo->prepare(
-            'SELECT
+            "SELECT
                 m.id, m.user_id, m.company, m.position, m.expertise, m.verified_by_admin,
+                {$locationSelect},
                 u.name, u.email, u.avatar, u.bio, u.status, u.verification_status
              FROM mentors m
              INNER JOIN users u ON u.id = m.user_id
-             WHERE u.name LIKE :mentor_like_name OR COALESCE(u.bio, \'\') LIKE :mentor_like_bio
+             WHERE u.name LIKE :mentor_like_name OR COALESCE(u.bio, '') LIKE :mentor_like_bio
              ORDER BY u.created_at DESC
-             LIMIT :lim'
+             LIMIT :lim"
         );
         $mentorStmt->bindValue(':mentor_like_name', $like, PDO::PARAM_STR);
         $mentorStmt->bindValue(':mentor_like_bio', $like, PDO::PARAM_STR);
@@ -1049,5 +1429,116 @@ function repo_search_content($query, $limitPerType = 8)
     } catch (Throwable $e) {
         error_log('repo_search_content failed: ' . $e->getMessage());
         return ['blogs' => [], 'questions' => [], 'mentors' => []];
+    }
+}
+
+// ===== Chat / Messages =====
+
+function repo_fetch_mentorship_request_by_id($requestId)
+{
+    try {
+        $pdo = repo_db();
+        $stmt = $pdo->prepare(
+            'SELECT mr.id, mr.student_id, mr.mentor_id, mr.status, mr.message, mr.created_at,
+                    su.name AS student_name, mu.name AS mentor_name
+             FROM mentorship_requests mr
+             INNER JOIN users su ON su.id = mr.student_id
+             INNER JOIN users mu ON mu.id = mr.mentor_id
+             WHERE mr.id = :id
+             LIMIT 1'
+        );
+        $stmt->execute([':id' => (int) $requestId]);
+        return $stmt->fetch() ?: null;
+    } catch (Throwable $e) {
+        error_log('repo_fetch_mentorship_request_by_id failed: ' . $e->getMessage());
+        return null;
+    }
+}
+
+function repo_validate_chat_access($requestId, $userId)
+{
+    $request = repo_fetch_mentorship_request_by_id($requestId);
+    if (!$request) {
+        return ['allowed' => false, 'error' => 'Mentorship request not found.'];
+    }
+    if ($request['status'] !== 'approved') {
+        return ['allowed' => false, 'error' => 'Chat is only available for approved mentorship requests.'];
+    }
+    $studentId = (int) $request['student_id'];
+    $mentorId = (int) $request['mentor_id'];
+    if ((int) $userId !== $studentId && (int) $userId !== $mentorId) {
+        return ['allowed' => false, 'error' => 'You are not part of this mentorship.'];
+    }
+    return [
+        'allowed' => true,
+        'request' => $request,
+        'student_id' => $studentId,
+        'mentor_id' => $mentorId,
+    ];
+}
+
+function repo_create_message($requestId, $senderId, $receiverId, $message, $senderRole = null)
+{
+    try {
+        repo_ensure_application_schema();
+        $pdo = repo_db();
+        $normalizedRole = strtolower((string) $senderRole);
+        if (!in_array($normalizedRole, ['student', 'mentor'], true)) {
+            $normalizedRole = null;
+        }
+
+        if (repo_table_has_column('messages', 'sender_role')) {
+            $stmt = $pdo->prepare(
+                'INSERT INTO messages (request_id, sender_id, sender_role, receiver_id, message, created_at)
+                 VALUES (:request_id, :sender_id, :sender_role, :receiver_id, :message, NOW())'
+            );
+            $stmt->execute([
+                ':request_id' => (int) $requestId,
+                ':sender_id' => (int) $senderId,
+                ':sender_role' => $normalizedRole,
+                ':receiver_id' => (int) $receiverId,
+                ':message' => $message,
+            ]);
+        } else {
+            $stmt = $pdo->prepare(
+                'INSERT INTO messages (request_id, sender_id, receiver_id, message, created_at)
+                 VALUES (:request_id, :sender_id, :receiver_id, :message, NOW())'
+            );
+            $stmt->execute([
+                ':request_id' => (int) $requestId,
+                ':sender_id' => (int) $senderId,
+                ':receiver_id' => (int) $receiverId,
+                ':message' => $message,
+            ]);
+        }
+
+        return ['success' => true, 'id' => (int) $pdo->lastInsertId()];
+    } catch (Throwable $e) {
+        error_log('repo_create_message failed: ' . $e->getMessage());
+        return ['success' => false, 'error' => 'Failed to send message.'];
+    }
+}
+
+function repo_fetch_messages($requestId)
+{
+    try {
+        $pdo = repo_db();
+        $senderRoleSelect = repo_table_has_column('messages', 'sender_role')
+            ? 'COALESCE(m.sender_role, u.role) AS sender_role'
+            : 'u.role AS sender_role';
+        $stmt = $pdo->prepare(
+            "SELECT m.id, m.request_id, m.sender_id, m.receiver_id, m.message, m.created_at,
+                    {$senderRoleSelect},
+                    u.name AS sender_name
+             FROM messages m
+             INNER JOIN users u ON u.id = m.sender_id
+             WHERE m.request_id = :request_id
+             ORDER BY m.created_at ASC"
+        );
+        $stmt->execute([':request_id' => (int) $requestId]);
+        return $stmt->fetchAll();
+    } catch (Throwable $e) {
+        error_log('repo_fetch_messages failed: ' . $e->getMessage());
+        return [];
     }
 }

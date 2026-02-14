@@ -105,7 +105,7 @@ function content_map_mentor($row)
         'name' => $name,
         'role' => $row['position'] ?? 'Mentor',
         'company' => $row['company'] ?? 'N/A',
-        'location' => 'N/A',
+        'location' => $row['location'] ?? 'N/A',
         'avatar' => strtoupper(substr($name, 0, 1)),
         'domain' => 'Career Guidance',
         'experience' => '5+ years',
@@ -133,6 +133,61 @@ function content_map_announcement($row)
     ];
 }
 
+function content_csv_to_array($value)
+{
+    if (is_array($value)) {
+        $items = $value;
+    } else {
+        $items = explode(',', (string) $value);
+    }
+    return array_values(array_filter(array_map(static function ($item) {
+        return trim((string) $item);
+    }, $items), static function ($item) {
+        return $item !== '';
+    }));
+}
+
+function content_input_to_csv($value)
+{
+    return implode(', ', content_csv_to_array($value));
+}
+
+function content_map_profile($row)
+{
+    if (!$row || !is_array($row)) {
+        return null;
+    }
+
+    $role = strtolower((string) ($row['role'] ?? 'student'));
+    $mentorExpertise = content_csv_to_array($row['expertise'] ?? '');
+    $rawSkills = content_csv_to_array($row['skills'] ?? '');
+    $skills = $role === 'mentor'
+        ? ($rawSkills ?: $mentorExpertise)
+        : $rawSkills;
+
+    return [
+        'id' => (int) ($row['id'] ?? 0),
+        'name' => $row['name'] ?? '',
+        'email' => $row['email'] ?? '',
+        'role' => $role,
+        'avatar' => $row['avatar'] ?? null,
+        'profile_image' => $row['avatar'] ?? null,
+        'bio' => $row['bio'] ?? '',
+        'phone' => $row['phone'] ?? '',
+        'location' => $row['location'] ?? '',
+        'skills' => $skills,
+        'interests' => content_csv_to_array($row['interests'] ?? ''),
+        'roll_number' => $row['roll_number'] ?? '',
+        'branch' => $row['branch'] ?? '',
+        'year' => isset($row['year']) ? (int) $row['year'] : null,
+        'company' => $row['company'] ?? '',
+        'position' => $row['position'] ?? '',
+        'expertise' => $mentorExpertise,
+        'joined_date' => repo_datetime_to_display($row['created_at'] ?? null),
+        'id_card_status' => 'verified',
+    ];
+}
+
 if ($action === 'bootstrap' || $action === 'public_data') {
     $blogs = array_map('content_map_blog', repo_fetch_blogs('published'));
     $questions = array_map('content_map_question', repo_fetch_questions());
@@ -155,6 +210,7 @@ if ($action === 'bootstrap' || $action === 'public_data') {
         if (in_array($user['role'], ['student', 'mentor'], true)) {
             $response['my_blogs'] = array_map('content_map_blog', repo_fetch_blogs_by_author((int) $user['id']));
             $response['mentorship_requests'] = repo_fetch_mentorship_requests((int) $user['id'], $user['role']);
+            $response['profile'] = content_map_profile(repo_fetch_user_profile((int) $user['id']));
         }
     }
 
@@ -403,44 +459,23 @@ if ($action === 'update_mentorship_request_status') {
 }
 
 if ($action === 'create_mentorship_request') {
-    $sessionUser = isset($_SESSION['user']) && is_array($_SESSION['user']) ? $_SESSION['user'] : null;
-    if (!$sessionUser || !isset($sessionUser['id'])) {
-        http_response_code(403);
-        header('Content-Type: application/json');
-        echo json_encode(['success' => false, 'error' => 'Unauthorized']);
-        exit;
-    }
-
-    if (($sessionUser['role'] ?? '') !== 'student') {
-        http_response_code(403);
-        header('Content-Type: application/json');
-        echo json_encode(['success' => false, 'error' => 'Unauthorized']);
-        exit;
-    }
+    $sessionUser = api_require_role('student');
 
     $mentorUserId = (int) ($input['mentor_user_id'] ?? 0);
     $message = api_clean_text($input['message'] ?? '');
     if ($mentorUserId <= 0) {
         api_json_response(['success' => false, 'error' => 'Invalid mentor selected.'], 400);
     }
-
-    $mentorExists = false;
-    $mentors = repo_fetch_mentors();
-    foreach ($mentors as $mentor) {
-        if ((int) ($mentor['user_id'] ?? 0) === $mentorUserId) {
-            $mentorExists = true;
-            break;
-        }
-    }
-    if (!$mentorExists) {
-        api_json_response(['success' => false, 'error' => 'Invalid mentor selected.'], 400);
+    if ($mentorUserId === (int) $sessionUser['id']) {
+        api_json_response(['success' => false, 'error' => 'You cannot request mentorship from your own account.'], 400);
     }
 
     $result = repo_create_mentorship_request((int) $sessionUser['id'], $mentorUserId, $message);
     if (!$result['success']) {
-        api_json_response($result, 400);
+        $statusCode = (($result['code'] ?? '') === 'rate_limited') ? 429 : 400;
+        api_json_response($result, $statusCode);
     }
-    api_json_response(['success' => true]);
+    api_json_response(['success' => true, 'id' => $result['id'] ?? null]);
 }
 
 if ($action === 'mentorship_requests') {
@@ -452,27 +487,93 @@ if ($action === 'mentorship_requests') {
 
 if ($action === 'update_profile') {
     $user = api_require_login();
+    $role = strtolower((string) ($user['role'] ?? ''));
+    if (!in_array($role, ['student', 'mentor', 'admin'], true)) {
+        api_json_response(['success' => false, 'error' => 'Forbidden.'], 403);
+    }
+
     $name = api_clean_text($input['name'] ?? '');
+    $email = strtolower(api_clean_text($input['email'] ?? ''));
+    $phone = api_clean_text($input['phone'] ?? '');
+    $location = api_clean_text($input['location'] ?? '');
     $bio = api_clean_text($input['bio'] ?? '');
-    if ($name === '' || mb_strlen($name) < 2) {
+    $avatar = api_clean_text($input['avatar'] ?? ($input['profile_image'] ?? ''));
+    $skillsCsv = content_input_to_csv($input['skills'] ?? '');
+    $interestsCsv = content_input_to_csv($input['interests'] ?? '');
+
+    $nameLength = function_exists('mb_strlen') ? mb_strlen($name) : strlen($name);
+    if ($name === '' || $nameLength < 2) {
         api_json_response(['success' => false, 'error' => 'Name must be at least 2 characters.'], 400);
     }
-
-    $ok = repo_update_user_profile((int) $user['id'], $name, $bio === '' ? null : $bio, $user['avatar'] ?? null);
-    if (!$ok) {
-        api_json_response(['success' => false, 'error' => 'Failed to update profile.'], 400);
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        api_json_response(['success' => false, 'error' => 'A valid email address is required.'], 400);
+    }
+    if ($phone !== '' && !preg_match('/^[0-9+\-\s()]{7,20}$/', $phone)) {
+        api_json_response(['success' => false, 'error' => 'Phone number format is invalid.'], 400);
+    }
+    if ($role === 'student') {
+        $rollNumber = api_clean_text($input['roll_number'] ?? '');
+        if ($rollNumber === '') {
+            api_json_response(['success' => false, 'error' => 'Roll number is required for student profiles.'], 400);
+        }
     }
 
-    $_SESSION['user']['name'] = $name;
+    $yearInput = $input['year'] ?? null;
+    $year = null;
+    if ($yearInput !== null && trim((string) $yearInput) !== '') {
+        if (!is_numeric($yearInput)) {
+            api_json_response(['success' => false, 'error' => 'Year must be a valid number.'], 400);
+        }
+        $year = (int) $yearInput;
+        if ($year < 1 || $year > 10) {
+            api_json_response(['success' => false, 'error' => 'Year must be between 1 and 10.'], 400);
+        }
+    }
+
+    $expertiseCsv = content_input_to_csv($input['expertise'] ?? ($input['skills'] ?? ''));
+
+    $payload = [
+        'name' => $name,
+        'email' => $email,
+        'phone' => $phone !== '' ? $phone : null,
+        'location' => $location !== '' ? $location : null,
+        'bio' => $bio !== '' ? $bio : null,
+        'avatar' => $avatar !== '' ? $avatar : ($user['avatar'] ?? null),
+        'skills' => $skillsCsv !== '' ? $skillsCsv : null,
+        'interests' => $interestsCsv !== '' ? $interestsCsv : null,
+        'roll_number' => api_clean_text($input['roll_number'] ?? ''),
+        'branch' => api_clean_text($input['branch'] ?? '') ?: null,
+        'year' => $year,
+        'company' => api_clean_text($input['company'] ?? '') ?: null,
+        'position' => api_clean_text($input['position'] ?? '') ?: null,
+        'expertise' => $expertiseCsv !== '' ? $expertiseCsv : null,
+    ];
+
+    $result = repo_update_user_profile_details((int) $user['id'], $role, $payload);
+    if (!($result['success'] ?? false)) {
+        api_json_response(['success' => false, 'error' => $result['error'] ?? 'Failed to update profile.'], 400);
+    }
+
+    $updatedProfile = repo_fetch_user_profile((int) $user['id']);
+    if (!$updatedProfile) {
+        api_json_response(['success' => false, 'error' => 'Profile updated but could not be reloaded.'], 500);
+    }
+    $mappedProfile = content_map_profile($updatedProfile);
+
+    $_SESSION['user']['name'] = $mappedProfile['name'] ?? $name;
+    $_SESSION['user']['email'] = $mappedProfile['email'] ?? $email;
+    $_SESSION['user']['avatar'] = $mappedProfile['avatar'] ?? ($user['avatar'] ?? null);
+
     api_json_response([
         'success' => true,
         'user' => [
             'id' => (int) $user['id'],
-            'name' => $name,
-            'email' => $user['email'],
+            'name' => $_SESSION['user']['name'],
+            'email' => $_SESSION['user']['email'],
             'role' => $user['role'],
-            'avatar' => $user['avatar'] ?? '',
+            'avatar' => $_SESSION['user']['avatar'] ?? '',
         ],
+        'profile' => $mappedProfile,
     ]);
 }
 
@@ -509,6 +610,69 @@ if ($action === 'delete_account') {
 
     logout();
     api_json_response(['success' => true, 'loggedOut' => true]);
+}
+
+if ($action === 'send_message') {
+    $user = api_require_login();
+    $role = $user['role'] ?? '';
+    if ($role === 'admin') {
+        api_json_response(['success' => false, 'error' => 'Admin cannot access chat.'], 403);
+    }
+    $requestId = (int) ($input['request_id'] ?? 0);
+    $message = api_clean_text($input['message'] ?? '');
+    if ($requestId <= 0 || $message === '') {
+        api_json_response(['success' => false, 'error' => 'Request ID and message are required.'], 400);
+    }
+    $access = repo_validate_chat_access($requestId, (int) $user['id']);
+    if (!$access['allowed']) {
+        api_json_response(['success' => false, 'error' => $access['error']], 403);
+    }
+
+    $senderId = (int) $user['id'];
+    $isStudentSender = $senderId === (int) $access['student_id'];
+    $senderRole = $isStudentSender ? 'student' : 'mentor';
+    if ($role !== $senderRole) {
+        api_json_response(['success' => false, 'error' => 'Sender role mismatch for this mentorship chat.'], 403);
+    }
+
+    $receiverId = $isStudentSender ? (int) $access['mentor_id'] : (int) $access['student_id'];
+    $result = repo_create_message($requestId, $senderId, $receiverId, $message, $senderRole);
+    if (!$result['success']) {
+        api_json_response($result, 400);
+    }
+    api_json_response(['success' => true, 'id' => $result['id']]);
+}
+
+if ($action === 'get_messages') {
+    $user = api_require_login();
+    $role = $user['role'] ?? '';
+    if ($role === 'admin') {
+        api_json_response(['success' => false, 'error' => 'Admin cannot access chat.'], 403);
+    }
+    $requestId = (int) ($input['request_id'] ?? 0);
+    if ($requestId <= 0) {
+        api_json_response(['success' => false, 'error' => 'Request ID is required.'], 400);
+    }
+    $access = repo_validate_chat_access($requestId, (int) $user['id']);
+    if (!$access['allowed']) {
+        api_json_response(['success' => false, 'error' => $access['error']], 403);
+    }
+    $messages = repo_fetch_messages($requestId);
+    $request = $access['request'];
+    api_json_response([
+        'success' => true,
+        'messages' => $messages,
+        'current_user_id' => (int) $user['id'],
+        'current_user_role' => $role,
+        'request' => [
+            'id' => (int) $request['id'],
+            'student_id' => (int) $request['student_id'],
+            'mentor_id' => (int) $request['mentor_id'],
+            'student_name' => $request['student_name'],
+            'mentor_name' => $request['mentor_name'],
+            'status' => $request['status'],
+        ],
+    ]);
 }
 
 api_json_response(['success' => false, 'error' => 'Unknown action.'], 400);

@@ -29,6 +29,7 @@
         questions: [],
         mentors: [],
         mentorshipRequests: [],
+        profile: null,
         adminBlogs: [],
         adminUsers: [],
         announcements: [],
@@ -162,16 +163,18 @@
 
         modalRoot.innerHTML = `
             <div class="fixed inset-0 bg-gray-900/50" data-cb-close></div>
-            <div class="fixed inset-0 flex items-center justify-center p-4">
-                <div class="w-full max-w-lg rounded-2xl border border-gray-200 bg-white p-6 shadow-lg">
-                    <div class="mb-4">
+            <div class="fixed inset-0 flex items-center justify-center p-3 sm:p-4">
+                <div class="w-full max-w-lg max-h-[90vh] rounded-2xl border border-gray-200 bg-white shadow-lg flex flex-col">
+                    <div class="px-6 pt-6 pb-3">
                         <h3 class="text-lg font-semibold text-gray-900">${escapeHtml(title)}</h3>
                         ${description ? `<p class="mt-1 text-sm text-gray-600">${escapeHtml(description)}</p>` : ''}
                     </div>
-                    <form id="cb-action-form" class="space-y-4">
-                        ${fields.map(createFieldMarkup).join('')}
-                        <p id="cb-form-error" class="hidden rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"></p>
-                        <div class="flex items-center justify-end space-x-2 pt-2">
+                    <form id="cb-action-form" class="flex min-h-0 flex-1 flex-col">
+                        <div class="space-y-4 overflow-y-auto px-6 pb-4">
+                            ${fields.map(createFieldMarkup).join('')}
+                            <p id="cb-form-error" class="hidden rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"></p>
+                        </div>
+                        <div class="flex items-center justify-end space-x-2 border-t border-gray-100 bg-white px-6 py-4">
                             <button type="button" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50" data-cb-close>Cancel</button>
                             <button type="submit" id="cb-form-submit" class="inline-flex items-center rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-700">${escapeHtml(submitLabel)}</button>
                         </div>
@@ -440,6 +443,7 @@
             router.dbData.questions = normalizeArray(contentData.questions);
             router.dbData.mentors = normalizeArray(contentData.mentors);
             router.dbData.mentorshipRequests = normalizeArray(contentData.mentorship_requests);
+            router.dbData.profile = (contentData.profile && typeof contentData.profile === 'object') ? contentData.profile : null;
             router.dbData.studentCount = Number(contentData.student_count) || 0;
             if (role !== 'admin') {
                 router.dbData.announcements = normalizeArray(contentData.announcements);
@@ -450,6 +454,7 @@
             router.dbData.questions = [];
             router.dbData.mentors = [];
             router.dbData.mentorshipRequests = [];
+            router.dbData.profile = null;
             router.dbData.studentCount = 0;
             if (role !== 'admin') {
                 router.dbData.announcements = [];
@@ -458,6 +463,7 @@
         }
 
         if (role === 'admin') {
+            router.dbData.profile = null;
             try {
                 const adminData = await postJSON(ADMIN_API, { action: 'bootstrap' });
                 router.dbData.adminUsers = normalizeArray(adminData.users);
@@ -511,6 +517,7 @@
                 baseRender();
                 wirePassiveButtons();
                 updateHomeStats();
+                _initChat();
             });
     };
 
@@ -1811,25 +1818,75 @@
 
     window.openProfileEditModal = async function () {
         if (!ensureLoggedIn()) return;
-        const mentor = normalizeArray(router.dbData.mentors).find((m) => Number(m.userId || m.id) === Number(router.user.id));
-        const currentBio = mentor && mentor.bio ? mentor.bio : '';
+        const role = String((router.user && router.user.role) || '').toLowerCase();
+        const profile = (router.dbData && router.dbData.profile && typeof router.dbData.profile === 'object')
+            ? router.dbData.profile
+            : {};
+        const toCommaList = (value) => {
+            if (Array.isArray(value)) {
+                return value.join(', ');
+            }
+            return String(value || '');
+        };
+
+        const fields = [
+            { name: 'name', label: 'Name', required: true, minLength: 2, value: profile.name || router.user.name || '' },
+            { name: 'email', label: 'Email', type: 'email', required: true, value: profile.email || router.user.email || '' },
+            { name: 'phone', label: 'Phone', value: profile.phone || '', placeholder: '+1 555 555 5555' },
+            { name: 'location', label: 'Location', value: profile.location || '', placeholder: 'City, State' },
+            { name: 'bio', label: 'Bio', type: 'textarea', rows: 4, value: profile.bio || '' },
+            { name: 'avatar', label: 'Profile Image URL', value: profile.avatar || profile.profile_image || '', placeholder: 'https://example.com/image.jpg' }
+        ];
+
+        if (role === 'student') {
+            fields.push(
+                { name: 'roll_number', label: 'Roll Number', required: true, minLength: 2, value: profile.roll_number || '' },
+                { name: 'branch', label: 'Branch', value: profile.branch || '' },
+                { name: 'year', label: 'Year', type: 'number', min: 1, max: 10, value: profile.year != null ? profile.year : '' },
+                { name: 'skills', label: 'Skills (comma-separated)', value: toCommaList(profile.skills || []) },
+                { name: 'interests', label: 'Interests (comma-separated)', value: toCommaList(profile.interests || []) }
+            );
+        } else if (role === 'mentor') {
+            fields.push(
+                { name: 'company', label: 'Company', value: profile.company || '' },
+                { name: 'position', label: 'Position', value: profile.position || '' },
+                { name: 'expertise', label: 'Expertise (comma-separated)', value: toCommaList(profile.expertise || []) },
+                { name: 'skills', label: 'Technical Skills (comma-separated)', value: toCommaList(profile.skills || []) }
+            );
+        }
 
         await openActionModal({
             title: 'Edit Profile',
             submitLabel: 'Save Profile',
-            fields: [
-                { name: 'name', label: 'Name', required: true, minLength: 2, value: router.user.name || '' },
-                { name: 'bio', label: 'Bio', type: 'textarea', rows: 4, value: currentBio }
-            ],
+            fields: fields,
             onSubmit: async (values) => {
-                const result = await postJSON(CONTENT_API, {
+                const payload = {
                     action: 'update_profile',
                     name: values.name,
-                    bio: values.bio || ''
+                    email: values.email,
+                    phone: values.phone || '',
+                    location: values.location || '',
+                    bio: values.bio || '',
+                    avatar: values.avatar || '',
+                    skills: values.skills || '',
+                    interests: values.interests || '',
+                    roll_number: values.roll_number || '',
+                    branch: values.branch || '',
+                    year: values.year || '',
+                    company: values.company || '',
+                    position: values.position || '',
+                    expertise: values.expertise || ''
+                };
+
+                const result = await postJSON(CONTENT_API, {
+                    ...payload
                 });
                 if (result && result.user) {
                     router.user = result.user;
                     localStorage.setItem('demo_user', JSON.stringify(result.user));
+                }
+                if (result && result.profile) {
+                    router.dbData.profile = result.profile;
                 }
                 await safeRefreshAndRender();
                 showToast('Profile updated.', 'success');
@@ -1920,7 +1977,7 @@
         if (messageBtn) {
             messageBtn.addEventListener('click', () => {
                 closeModal();
-                window.openMentorshipChat(request.student_name || 'Student', 'mentor');
+                window.openMentorshipChat(request.id, request.student_name || 'Student', 'mentor');
             });
         }
     };
@@ -2054,14 +2111,17 @@
         showToast(`Blogs: ${myBlogs.length} | Published: ${published} | Pending: ${pending} | Rejected: ${rejected} | Views: ${totalViews}`, 'info');
     };
 
-    window.openMentorshipChat = function (targetName, role) {
+    window.openMentorshipChat = function (requestId, targetName, role) {
         if (!ensureLoggedIn()) return;
-        if (role === 'mentor') {
-            router.navigate('/mentor/students');
-        } else {
-            router.navigate('/student/mentorship');
+        if (!requestId) {
+            showToast('Unable to open chat — missing request ID.', 'error');
+            return;
         }
-        showToast(`Opening chat${targetName ? ` with ${targetName}` : ''}.`, 'info');
+        if (role === 'mentor') {
+            router.navigate('/mentor/chat/' + requestId);
+        } else {
+            router.navigate('/student/chat/' + requestId);
+        }
     };
 
     window.showFeatureNotice = function (message) {
@@ -2151,11 +2211,202 @@
         showToast('Sorted by: ' + selectEl.value, 'info');
     };
 
+    // ===== Chat Engine =====
+    let _chatPollTimer = null;
+
+    function _stopChatPolling() {
+        if (_chatPollTimer) {
+            clearInterval(_chatPollTimer);
+            _chatPollTimer = null;
+        }
+    }
+
+    function _escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+
+    function _formatChatTime(dateStr) {
+        try {
+            const d = new Date(dateStr);
+            if (isNaN(d)) return dateStr;
+            const now = new Date();
+            const isToday = d.toDateString() === now.toDateString();
+            const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            if (isToday) return timeStr;
+            return d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + timeStr;
+        } catch (e) {
+            return dateStr;
+        }
+    }
+
+    function _renderChatMessages(messages, currentUserId, role) {
+        const container = document.getElementById('chatMessages');
+        if (!container) return;
+
+        if (!messages || messages.length === 0) {
+            container.innerHTML = '<div class="flex justify-center"><span class="px-4 py-1 bg-gray-200 text-gray-600 text-xs rounded-full">No messages yet. Start the conversation!</span></div>';
+            return;
+        }
+
+        const isMine = (msg) => {
+            return Number(msg.sender_id) === Number(currentUserId);
+        };
+        const myBubbleColor = role === 'mentor' ? 'bg-success-600 text-white rounded-br-none' : 'bg-primary-600 text-white rounded-br-none';
+        const myTimeColor = role === 'mentor' ? 'text-success-200' : 'text-primary-200';
+
+        let html = '';
+        let lastDate = '';
+        messages.forEach(msg => {
+            // Date separator
+            try {
+                const d = new Date(msg.created_at);
+                const dateStr = d.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+                if (dateStr !== lastDate) {
+                    html += '<div class="flex justify-center"><span class="px-4 py-1 bg-gray-200 text-gray-600 text-xs rounded-full">' + _escapeHtml(dateStr) + '</span></div>';
+                    lastDate = dateStr;
+                }
+            } catch (e) { /* skip date separator */ }
+
+            const mine = isMine(msg);
+            const avatar = (msg.sender_name || 'U').charAt(0).toUpperCase();
+            const avatarGrad = mine ? '' : (role === 'mentor'
+                ? '<div class="h-8 w-8 rounded-full bg-gradient-to-br from-primary-100 to-primary-200 flex items-center justify-center flex-shrink-0"><span class="text-sm font-bold text-primary-700">' + _escapeHtml(avatar) + '</span></div>'
+                : '<div class="h-8 w-8 rounded-full bg-gradient-to-br from-success-100 to-success-200 flex items-center justify-center flex-shrink-0"><span class="text-sm font-bold text-success-700">' + _escapeHtml(avatar) + '</span></div>');
+
+            html += '<div class="flex ' + (mine ? 'justify-end' : 'justify-start') + '">';
+            html += '<div class="flex max-w-[85%] md:max-w-[70%] ' + (mine ? 'flex-row-reverse' : 'flex-row') + ' items-end space-x-2">';
+            html += avatarGrad;
+            html += '<div class="px-4 py-2 rounded-2xl ' + (mine ? myBubbleColor : 'bg-white border border-gray-200 text-gray-900 rounded-bl-none') + '">';
+            html += '<p class="text-sm whitespace-pre-wrap">' + _escapeHtml(msg.message) + '</p>';
+            html += '<div class="flex items-center justify-end mt-1 space-x-1 ' + (mine ? myTimeColor : 'text-gray-400') + '">';
+            html += '<span class="text-xs">' + _formatChatTime(msg.created_at) + '</span>';
+            html += '</div></div></div></div>';
+        });
+
+        container.innerHTML = html;
+
+        // Auto-scroll to bottom
+        container.scrollTop = container.scrollHeight;
+    }
+
+    async function _fetchAndRenderChat(requestId, role) {
+        try {
+            const resp = await postJSON(CONTENT_API, { action: 'get_messages', request_id: Number(requestId) });
+
+            const messages = resp.messages || [];
+            const request = resp.request || {};
+            const userId = Number(resp.current_user_id || (router.user && router.user.id) || 0);
+
+            // Update header info
+            const partnerName = role === 'student' ? (request.mentor_name || 'Mentor') : (request.student_name || 'Student');
+            const nameEl = document.getElementById('chatPartnerName');
+            if (nameEl) nameEl.textContent = partnerName;
+            const roleEl = document.getElementById('chatPartnerRole');
+            if (roleEl) roleEl.textContent = role === 'student' ? 'Mentor' : 'Student';
+            const avatarEl = document.getElementById('chatPartnerAvatar');
+            if (avatarEl) {
+                const initial = partnerName.charAt(0).toUpperCase();
+                const grad = role === 'student' ? 'from-success-100 to-success-200' : 'from-primary-100 to-primary-200';
+                const txtColor = role === 'student' ? 'text-success-700' : 'text-primary-700';
+                avatarEl.innerHTML = '<span class="text-xl font-bold ' + txtColor + '">' + _escapeHtml(initial) + '</span>';
+                avatarEl.className = 'h-12 w-12 rounded-full bg-gradient-to-br ' + grad + ' flex items-center justify-center';
+            }
+            // Sidebar (mentor view)
+            const sidebarNameEl = document.getElementById('sidebarName');
+            if (sidebarNameEl) sidebarNameEl.textContent = partnerName;
+            const sidebarRoleEl = document.getElementById('sidebarRole');
+            if (sidebarRoleEl) sidebarRoleEl.textContent = role === 'student' ? 'Mentor' : 'Student';
+            const sidebarAvatarEl = document.getElementById('sidebarAvatar');
+            if (sidebarAvatarEl) {
+                const initial = partnerName.charAt(0).toUpperCase();
+                sidebarAvatarEl.innerHTML = '<span class="text-3xl font-bold text-primary-700">' + _escapeHtml(initial) + '</span>';
+            }
+
+            _renderChatMessages(messages, userId, role);
+        } catch (e) {
+            console.error('Chat fetch error:', e);
+            const container = document.getElementById('chatMessages');
+            if (container) {
+                container.innerHTML = '<div class="flex justify-center"><span class="px-4 py-1 bg-red-200 text-red-700 text-xs rounded-full">' + _escapeHtml(e.message || 'Failed to load messages') + '</span></div>';
+            }
+            _stopChatPolling();
+        }
+    }
+
+    function _initChat() {
+        const container = document.getElementById('chatContainer');
+        if (!container) {
+            _stopChatPolling();
+            return;
+        }
+        const requestId = container.getAttribute('data-request-id');
+        const role = container.getAttribute('data-role');
+        if (!requestId || !role) return;
+
+        // Already polling for this exact chat instance?
+        if (_chatPollTimer && container.getAttribute('data-polling') === '1') return;
+
+        // Stop any previous timer before starting a new one
+        _stopChatPolling();
+        container.setAttribute('data-polling', '1');
+
+        // Initial fetch
+        _fetchAndRenderChat(requestId, role);
+
+        // Poll every 2 seconds
+        _chatPollTimer = setInterval(() => {
+            // If we navigated away, clean up
+            if (!document.getElementById('chatContainer')) {
+                _stopChatPolling();
+                return;
+            }
+            _fetchAndRenderChat(requestId, role);
+        }, 2000);
+    }
+
+    window.sendChatMessage = async function () {
+        const container = document.getElementById('chatContainer');
+        if (!container) return;
+        const requestId = container.getAttribute('data-request-id');
+        const role = container.getAttribute('data-role');
+        const input = document.getElementById('chatInput');
+        if (!input) return;
+        const message = input.value.trim();
+        if (!message) return;
+
+        input.value = '';
+        input.disabled = true;
+
+        try {
+            await postJSON(CONTENT_API, {
+                action: 'send_message',
+                request_id: Number(requestId),
+                message: message,
+            });
+            // Immediately fetch to show the new message
+            await _fetchAndRenderChat(requestId, role);
+        } catch (e) {
+            showToast('Failed to send message.', 'error');
+            input.value = message;
+        } finally {
+            input.disabled = false;
+            input.focus();
+        }
+    };
+
     // ===== wirePassiveButtons enhancements =====
     // Extend the existing render pipeline to add extra button wiring
     const _renderBefore = router.render.bind(router);
     router.render = function () {
+        // Stop chat polling if navigating away from chat
+        if (!document.getElementById('chatContainer')) {
+            _stopChatPolling();
+        }
         _renderBefore();
+        // Initialize chat if on a chat page
+        _initChat();
         // Wire additional passive buttons after the base render & wirePassiveButtons have run
         document.querySelectorAll('button').forEach(btn => {
             const txt = (btn.textContent || '').trim();

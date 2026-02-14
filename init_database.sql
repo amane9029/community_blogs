@@ -11,6 +11,7 @@ SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
 DROP TABLE IF EXISTS `_meta`;
+DROP TABLE IF EXISTS `messages`;
 DROP TABLE IF EXISTS `announcements`;
 DROP TABLE IF EXISTS `mentorship_requests`;
 DROP TABLE IF EXISTS `answers`;
@@ -29,7 +30,7 @@ CREATE TABLE `_meta` (
   `value` VARCHAR(255) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-INSERT INTO `_meta` (`key`, `value`) VALUES ('data_version', '2');
+INSERT INTO `_meta` (`key`, `value`) VALUES ('data_version', '3');
 
 CREATE TABLE `users` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
@@ -42,7 +43,11 @@ CREATE TABLE `users` (
   `verification_token` VARCHAR(255) DEFAULT NULL,
   `verification_status` ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending',
   `avatar` VARCHAR(255) DEFAULT NULL,
+  `phone` VARCHAR(30) DEFAULT NULL,
+  `location` VARCHAR(255) DEFAULT NULL,
   `bio` TEXT,
+  `skills` TEXT,
+  `interests` TEXT,
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY `uq_users_email` (`email`)
@@ -145,12 +150,38 @@ CREATE TABLE `mentorship_requests` (
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   KEY `idx_mentorship_student_id` (`student_id`),
   KEY `idx_mentorship_mentor_id` (`mentor_id`),
+  KEY `idx_mentorship_pair_created` (`student_id`, `mentor_id`, `created_at`),
   CONSTRAINT `fk_mentorship_student_user`
     FOREIGN KEY (`student_id`) REFERENCES `users`(`id`)
     ON UPDATE CASCADE
     ON DELETE CASCADE,
   CONSTRAINT `fk_mentorship_mentor_user`
     FOREIGN KEY (`mentor_id`) REFERENCES `users`(`id`)
+    ON UPDATE CASCADE
+    ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `messages` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `request_id` INT NOT NULL,
+  `sender_id` INT NOT NULL,
+  `sender_role` ENUM('student','mentor') DEFAULT NULL,
+  `receiver_id` INT NOT NULL,
+  `message` TEXT NOT NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY `idx_messages_request_id` (`request_id`),
+  KEY `idx_messages_sender_id` (`sender_id`),
+  KEY `idx_messages_receiver_id` (`receiver_id`),
+  CONSTRAINT `fk_messages_request`
+    FOREIGN KEY (`request_id`) REFERENCES `mentorship_requests`(`id`)
+    ON UPDATE CASCADE
+    ON DELETE CASCADE,
+  CONSTRAINT `fk_messages_sender`
+    FOREIGN KEY (`sender_id`) REFERENCES `users`(`id`)
+    ON UPDATE CASCADE
+    ON DELETE CASCADE,
+  CONSTRAINT `fk_messages_receiver`
+    FOREIGN KEY (`receiver_id`) REFERENCES `users`(`id`)
     ON UPDATE CASCADE
     ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -635,4 +666,3 @@ SET @sql_add_fk = IF(
 PREPARE stmt FROM @sql_add_fk;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
-
